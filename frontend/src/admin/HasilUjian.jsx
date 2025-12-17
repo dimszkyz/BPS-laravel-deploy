@@ -19,6 +19,7 @@ import {
 } from "react-icons/fa";
 import * as XLSX from "xlsx";
 
+// [FIX] Pastikan URL mengarah ke domain hosting (HTTPS)
 const API_URL = "https://kompeta.web.bps.go.id";
 
 // ---------- Helpers ----------
@@ -110,12 +111,18 @@ const getAdminContext = () => {
   };
 };
 
+// [LOGIC UTAMA DIPERBAIKI DISINI]
 const groupDataByUjianThenPeserta = (data) => {
   const groupedByExam = data.reduce((acc, row) => {
     const examId = row.exam_id ?? "unknown";
     const pesertaId = row.peserta_id;
-    const bobotSoal = row.bobot || 1;
-    const questionId = row.question_id; // Pastikan ambil question_id
+    
+    // [FIX 1] Paksa bobot jadi Number agar tidak jadi string "01"
+    const bobotSoal = Number(row.bobot) || 1; 
+    const questionId = row.question_id;
+
+    // [FIX 2] Cek status benar secara ketat (String "0" atau "1")
+    const isBenar = row.benar == 1 || row.benar === true || row.benar === "true";
 
     if (!acc[examId]) {
       acc[examId] = {
@@ -137,17 +144,16 @@ const groupDataByUjianThenPeserta = (data) => {
         total_soal_count: 0, 
         total_benar_count: 0,
         tipe_soal_set: new Set(),
-        processed_questions: new Set(), // BARU: Set pelacak
+        processed_questions: new Set(),
         submitted_at: row.created_at,
       };
     }
 
-    // --- PERBAIKAN: Cek Duplikasi Soal ---
+    // Cek Duplikasi Soal
     if (acc[examId].peserta_map[pesertaId].processed_questions.has(questionId)) {
-        return acc; // Lewati jika soal ini sudah dihitung
+        return acc;
     }
     acc[examId].peserta_map[pesertaId].processed_questions.add(questionId);
-    // -------------------------------------
 
     if (row.tipe_soal) {
       acc[examId].peserta_map[pesertaId].tipe_soal_set.add(row.tipe_soal);
@@ -155,20 +161,21 @@ const groupDataByUjianThenPeserta = (data) => {
 
     if (row.tipe_soal === "pilihanGanda" || row.tipe_soal === "teksSingkat") {
       acc[examId].peserta_map[pesertaId].total_pg += 1;
-      if (row.benar) {
+      // [FIX] Gunakan variabel isBenar
+      if (isBenar) {
         acc[examId].peserta_map[pesertaId].pg_benar += 1;
       }
     }
     
-    // Hitung Bobot
+    // Hitung Bobot (Matematika Number)
     acc[examId].peserta_map[pesertaId].total_bobot_maksimal += bobotSoal;
-    if (row.benar) {
+    if (isBenar) {
       acc[examId].peserta_map[pesertaId].total_bobot_diperoleh += bobotSoal;
     }
 
     // Hitung Kuantitas Soal
     acc[examId].peserta_map[pesertaId].total_soal_count += 1;
-    if (row.benar) {
+    if (isBenar) {
       acc[examId].peserta_map[pesertaId].total_benar_count += 1;
     }
 
@@ -199,7 +206,6 @@ const groupDataByUjianThenPeserta = (data) => {
           .map(t => formatTipeSoal(t))
           .join(", ");
 
-        // Bersihkan properti internal
         const { processed_questions, ...cleanPeserta } = peserta;
 
         return {
@@ -228,7 +234,7 @@ const prepareDataForExport = (pesertaList) =>
     "Nomor HP": p.nohp,
     Email: p.email,
     "Waktu Submit": formatTanggal(p.submitted_at),
-    "Tipe Soal": p.tipe_soal_string, // <-- Kolom Baru: Tipe Soal
+    "Tipe Soal": p.tipe_soal_string,
     "Soal Benar": `${p.total_benar_count} / ${p.total_soal_count}`,
     "Nilai Akhir (Skala 100)": `${p.nilai_akhir_bobot}%`,
   }));
@@ -247,9 +253,13 @@ const barColor = (v) => {
 
 // ---------- helper export baru ----------
 const statusJawabanExport = (row) => {
+  // Jika tipe soal manual, beri label manual
   if (row.tipe_soal === "esai" || row.tipe_soal === "esay" || row.tipe_soal === "soalDokumen")
     return "Manual / Belum Dinilai";
-  return row.benar ? "Benar" : "Salah";
+  
+  // [FIX] Cek benar secara ketat untuk export Excel
+  const isBenar = row.benar == 1 || row.benar === true || row.benar === "true";
+  return isBenar ? "Benar" : "Salah";
 };
 
 const jawabanExportText = (row) => {
@@ -379,8 +389,8 @@ const HasilUjian = () => {
             Email: row.email,
             "Waktu Submit": formatTanggal(row.created_at),
             "Teks Soal": row.soal_text,
-            "Tipe Soal": formatTipeSoal(row.tipe_soal), // Format agar lebih rapi
-            "Bobot Soal": row.bobot || 1, // Menampilkan bobot per soal di detail
+            "Tipe Soal": formatTipeSoal(row.tipe_soal),
+            "Bobot Soal": row.bobot || 1, 
             "Jawaban Peserta": jawabanExportText(row),
             "Status Jawaban": statusJawabanExport(row),
             "Kunci Jawaban": row.kunci_jawaban_text || "-",
@@ -451,7 +461,7 @@ const HasilUjian = () => {
         "Waktu Submit": formatTanggal(row.created_at),
         "Teks Soal": row.soal_text,
         "Tipe Soal": formatTipeSoal(row.tipe_soal),
-        "Bobot Soal": row.bobot || 1, // Menampilkan bobot
+        "Bobot Soal": row.bobot || 1, 
         "Jawaban Peserta": jawabanExportText(row),
         "Status Jawaban": statusJawabanExport(row),
         "Kunci Jawaban": row.kunci_jawaban_text || "-",

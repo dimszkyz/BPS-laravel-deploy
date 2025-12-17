@@ -310,7 +310,7 @@ class HasilController extends Controller
             'peserta_id' => 'required',
             'exam_id' => 'required',
             'question_id' => 'required',
-            'benar' => 'required|boolean'
+            'benar' => 'required'
         ]);
 
         $hasil = HasilUjian::where([
@@ -329,8 +329,8 @@ class HasilController extends Controller
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
-        // Update nilai
-        $hasil->update(['benar' => $request->benar]);
+        $statusBenar = filter_var($request->benar, FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
+        $hasil->update(['benar' => $statusBenar]);
 
         return response()->json([
             'message' => 'Nilai berhasil diperbarui', 

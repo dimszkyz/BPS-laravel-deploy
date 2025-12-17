@@ -14,6 +14,7 @@ import {
   FaThumbsDown
 } from "react-icons/fa";
 
+// [FIX] Pastikan URL mengarah ke domain hosting (HTTPS)
 const API_URL = "https://kompeta.web.bps.go.id";
 
 // Helper format tanggal (Tidak berubah)
@@ -71,7 +72,9 @@ const StatCard = ({ icon, label, value, color }) => (
 
 // Komponen Modal (Popup) Detail Soal
 const DetailSoalModal = ({ soal, nomorSoal, onClose }) => {
-  const isBenar = soal.benar;
+  // [FIX] Cek status benar secara ketat (handle string "1", "true", atau angka 1)
+  const isBenar = soal.benar == 1 || soal.benar === true || soal.benar === "true";
+  
   const jawabanBenarObj = soal.pilihan?.find((p) => p.is_correct);
   const jawabanBenarText =
     jawabanBenarObj?.opsi_text || "Kunci jawaban tidak ditemukan";
@@ -317,6 +320,7 @@ const HasilAkhir = () => {
       // Update state lokal agar UI berubah langsung
       setHasil((prevHasil) =>
         prevHasil.map((item) =>
+            // [FIX] Update state dengan nilai integer 1 atau 0 agar konsisten
           item.question_id === questionId ? { ...item, benar: isCorrect ? 1 : 0 } : item
         )
       );
@@ -326,7 +330,7 @@ const HasilAkhir = () => {
   };
 
   // ==========================
-  // Kalkulasi Skor Berbasis Bobot
+  // Kalkulasi Skor Berbasis Bobot (FIXED)
   // ==========================
   const pgAnswers = hasil.filter(
     (h) => h.tipe_soal === "pilihanGanda" || h.tipe_soal === "teksSingkat"
@@ -335,11 +339,16 @@ const HasilAkhir = () => {
   const dokumenAnswers = hasil.filter((h) => h.tipe_soal === "soalDokumen");
 
   // Hitung Total Bobot Maksimal (Jika semua benar)
-  const totalBobotMaksimal = hasil.reduce((acc, curr) => acc + (curr.bobot || 1), 0);
+  const totalBobotMaksimal = hasil.reduce((acc, curr) => {
+      // [FIX] Gunakan Number() untuk mencegah penjumlahan string "1" + "1" = "11"
+      return acc + (Number(curr.bobot) || 1);
+  }, 0);
   
   // Hitung Total Bobot yang Diperoleh Peserta (Hanya soal yang benar)
   const totalBobotDiperoleh = hasil.reduce((acc, curr) => {
-    return curr.benar ? acc + (curr.bobot || 1) : acc;
+    // [FIX] Cek benar secara ketat
+    const isBenar = curr.benar == 1 || curr.benar === true || curr.benar === "true";
+    return isBenar ? acc + (Number(curr.bobot) || 1) : acc;
   }, 0);
 
   // Konversi ke Skala 100
@@ -349,7 +358,8 @@ const HasilAkhir = () => {
 
   // Hitung jumlah soal Benar/Salah secara kuantitas
   const jumlahSoal = hasil.length;
-  const jumlahBenar = hasil.filter(h => h.benar).length;
+  // [FIX] Filter jumlah benar yang ketat
+  const jumlahBenar = hasil.filter(h => h.benar == 1 || h.benar === true || h.benar === "true").length;
   const jumlahSalah = jumlahSoal - jumlahBenar;
 
   // Handler modal
@@ -492,21 +502,25 @@ const HasilAkhir = () => {
             </h2>
             <div className="flex flex-wrap gap-2">
               {pgAnswers.length > 0 ? (
-                pgAnswers.map((jawaban, idx) => (
-                  <button
-                    key={jawaban.question_id}
-                    onClick={() => handleBukaModal(jawaban, idx + 1)}
-                    className={`w-10 h-10 flex items-center justify-center rounded-lg font-bold text-sm shadow-sm transition-all hover:shadow-lg hover:scale-110 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50
-                      ${
-                        jawaban.benar
-                          ? "bg-green-100 text-green-700 border border-green-300"
-                          : "bg-red-100 text-red-700 border border-red-300"
-                      }`}
-                    title={`Klik untuk melihat detail soal #${idx + 1}`}
-                  >
-                    {idx + 1}
-                  </button>
-                ))
+                pgAnswers.map((jawaban, idx) => {
+                    // [FIX] Cek status benar untuk warna tombol
+                    const isBenar = jawaban.benar == 1 || jawaban.benar === true || jawaban.benar === "true";
+                    return (
+                        <button
+                            key={jawaban.question_id}
+                            onClick={() => handleBukaModal(jawaban, idx + 1)}
+                            className={`w-10 h-10 flex items-center justify-center rounded-lg font-bold text-sm shadow-sm transition-all hover:shadow-lg hover:scale-110 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50
+                            ${
+                                isBenar
+                                ? "bg-green-100 text-green-700 border border-green-300"
+                                : "bg-red-100 text-red-700 border border-red-300"
+                            }`}
+                            title={`Klik untuk melihat detail soal #${idx + 1}`}
+                        >
+                            {idx + 1}
+                        </button>
+                    );
+                })
               ) : (
                 <p className="text-sm text-gray-500">
                   Tidak ada jawaban (auto-nilai).
@@ -522,56 +536,61 @@ const HasilAkhir = () => {
             </h2>
             <div className="space-y-6">
               {esayAnswers.length > 0 ? (
-                esayAnswers.map((jawaban, idx) => (
-                  <div
-                    key={jawaban.question_id}
-                    className="border-b border-gray-200 pb-4 last:border-b-0"
-                  >
-                    <div className="flex justify-between items-start">
-                        <div className="flex-1 pr-4">
-                            <p className="text-xs font-semibold text-gray-500 mb-1">
-                            ESAI #{idx + 1}
-                            </p>
-                            <p className="text-lg font-medium text-gray-900 mb-2 whitespace-pre-wrap">
-                            {jawaban.soal_text} <span className="text-xs text-gray-500 font-normal ml-2 bg-gray-100 px-2 py-0.5 rounded-full border">Bobot: {jawaban.bobot || 1}</span>
-                            </p>
-                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                                <p className="text-xs font-semibold text-gray-600 mb-1">
-                                    Jawaban Peserta:
-                                </p>
-                                <p className="text-sm text-gray-800 whitespace-pre-wrap">
-                                    {jawaban.jawaban_text || "(Tidak dijawab)"}
-                                </p>
+                esayAnswers.map((jawaban, idx) => {
+                    // [FIX] Status benar local untuk UI
+                    const isBenar = jawaban.benar == 1 || jawaban.benar === true || jawaban.benar === "true";
+                    
+                    return (
+                        <div
+                            key={jawaban.question_id}
+                            className="border-b border-gray-200 pb-4 last:border-b-0"
+                        >
+                            <div className="flex justify-between items-start">
+                                <div className="flex-1 pr-4">
+                                    <p className="text-xs font-semibold text-gray-500 mb-1">
+                                    ESAI #{idx + 1}
+                                    </p>
+                                    <p className="text-lg font-medium text-gray-900 mb-2 whitespace-pre-wrap">
+                                    {jawaban.soal_text} <span className="text-xs text-gray-500 font-normal ml-2 bg-gray-100 px-2 py-0.5 rounded-full border">Bobot: {jawaban.bobot || 1}</span>
+                                    </p>
+                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                        <p className="text-xs font-semibold text-gray-600 mb-1">
+                                            Jawaban Peserta:
+                                        </p>
+                                        <p className="text-sm text-gray-800 whitespace-pre-wrap">
+                                            {jawaban.jawaban_text || "(Tidak dijawab)"}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Tombol Nilai Manual */}
+                                <div className="flex flex-col gap-2 min-w-[120px] pt-6">
+                                    <p className="text-xs font-semibold text-gray-500 text-center mb-1">Beri Nilai:</p>
+                                    <button
+                                        onClick={() => updateNilaiManual(jawaban.question_id, true)}
+                                        className={`flex items-center justify-center gap-2 px-3 py-2 rounded-md border transition text-sm font-medium ${
+                                            isBenar 
+                                            ? "bg-green-600 text-white border-green-600 shadow-md" 
+                                            : "bg-white text-gray-500 border-gray-300 hover:bg-green-50 hover:text-green-600"
+                                        }`}
+                                    >
+                                        <FaThumbsUp /> Benar
+                                    </button>
+                                    <button
+                                        onClick={() => updateNilaiManual(jawaban.question_id, false)}
+                                        className={`flex items-center justify-center gap-2 px-3 py-2 rounded-md border transition text-sm font-medium ${
+                                            !isBenar 
+                                            ? "bg-red-600 text-white border-red-600 shadow-md" 
+                                            : "bg-white text-gray-500 border-gray-300 hover:bg-red-50 hover:text-red-600"
+                                        }`}
+                                    >
+                                        <FaThumbsDown /> Salah
+                                    </button>
+                                </div>
                             </div>
                         </div>
-
-                        {/* Tombol Nilai Manual */}
-                        <div className="flex flex-col gap-2 min-w-[120px] pt-6">
-                            <p className="text-xs font-semibold text-gray-500 text-center mb-1">Beri Nilai:</p>
-                            <button
-                                onClick={() => updateNilaiManual(jawaban.question_id, true)}
-                                className={`flex items-center justify-center gap-2 px-3 py-2 rounded-md border transition text-sm font-medium ${
-                                    jawaban.benar 
-                                    ? "bg-green-600 text-white border-green-600 shadow-md" 
-                                    : "bg-white text-gray-500 border-gray-300 hover:bg-green-50 hover:text-green-600"
-                                }`}
-                            >
-                                <FaThumbsUp /> Benar
-                            </button>
-                            <button
-                                onClick={() => updateNilaiManual(jawaban.question_id, false)}
-                                className={`flex items-center justify-center gap-2 px-3 py-2 rounded-md border transition text-sm font-medium ${
-                                    !jawaban.benar 
-                                    ? "bg-red-600 text-white border-red-600 shadow-md" 
-                                    : "bg-white text-gray-500 border-gray-300 hover:bg-red-50 hover:text-red-600"
-                                }`}
-                            >
-                                <FaThumbsDown /> Salah
-                            </button>
-                        </div>
-                    </div>
-                  </div>
-                ))
+                    );
+                })
               ) : (
                 <p className="text-sm text-gray-500">
                   Tidak ada jawaban esai.
@@ -590,6 +609,8 @@ const HasilAkhir = () => {
               {dokumenAnswers.length > 0 ? (
                 dokumenAnswers.map((jawaban, idx) => {
                   const files = getDokumenFiles(jawaban);
+                  // [FIX] Status benar local untuk UI
+                  const isBenar = jawaban.benar == 1 || jawaban.benar === true || jawaban.benar === "true";
 
                   return (
                     <div
@@ -640,7 +661,7 @@ const HasilAkhir = () => {
                             <button
                                 onClick={() => updateNilaiManual(jawaban.question_id, true)}
                                 className={`flex items-center justify-center gap-2 px-3 py-2 rounded-md border transition text-sm font-medium ${
-                                    jawaban.benar 
+                                    isBenar 
                                     ? "bg-green-600 text-white border-green-600 shadow-md" 
                                     : "bg-white text-gray-500 border-gray-300 hover:bg-green-50 hover:text-green-600"
                                 }`}
@@ -650,7 +671,7 @@ const HasilAkhir = () => {
                             <button
                                 onClick={() => updateNilaiManual(jawaban.question_id, false)}
                                 className={`flex items-center justify-center gap-2 px-3 py-2 rounded-md border transition text-sm font-medium ${
-                                    !jawaban.benar 
+                                    !isBenar 
                                     ? "bg-red-600 text-white border-red-600 shadow-md" 
                                     : "bg-white text-gray-500 border-gray-300 hover:bg-red-50 hover:text-red-600"
                                 }`}
