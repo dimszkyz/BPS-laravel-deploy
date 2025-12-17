@@ -7,7 +7,7 @@ import { jwtDecode } from "jwt-decode"; // Pastikan import ini ada
 import Header from "../component/header";
 
 const API_URL = "https://kompeta.web.bps.go.id";
-const SITE_KEY = "6Le6fSosAAAAAH_3uRpgisTOvN_O6rs9vp1evOK7";
+const SITE_KEY = "6LciBy4sAAAAACUmfgvmAS86i6iv2qWs5DV837I9";
 const defaultBgAdmin = "bg-gray-50";
 
 const LoginAdmin = () => {
