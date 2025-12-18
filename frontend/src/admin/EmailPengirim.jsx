@@ -8,6 +8,11 @@ import {
   FaSpinner,
   FaSave,
   FaInfoCircle,
+  FaServer,
+  FaHashtag,
+  FaLock,
+  FaUser,
+  FaCogs
 } from "react-icons/fa";
 
 const API_URL = "https://kompeta.web.bps.go.id";
@@ -26,7 +31,15 @@ const EmailPengirim = ({ onClose }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [msg, setMsg] = useState({ type: "", text: "" });
 
-  // Fetch SMTP Settings
+  // Daftar Provider SMTP untuk pengisian otomatis
+  const providers = [
+    { name: "Google / Gmail", value: "gmail", host: "smtp.gmail.com", port: 587 },
+    { name: "Brevo (Sendinblue)", value: "brevo", host: "smtp-relay.brevo.com", port: 587 },
+    { name: "Mailtrap", value: "mailtrap", host: "sandbox.smtp.mailtrap.io", port: 2525 },
+    { name: "Lainnya (Manual SMTP Hosting)", value: "custom", host: "", port: 587 },
+  ];
+
+  // Ambil pengaturan SMTP dari database saat komponen dimuat
   const fetchSmtpSettings = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -36,17 +49,12 @@ const EmailPengirim = ({ onClose }) => {
       });
       if (!res.ok) throw new Error("Gagal memuat pengaturan SMTP");
       const data = await res.json();
-      setSmtpSettings({
-        service: "gmail", // Selalu set ke 'gmail'
-        host: data.host || "smtp.gmail.com",
-        port: data.port || 587,
-        secure: !!data.secure,
-        auth_user: data.auth_user || "",
-        auth_pass: data.auth_pass || "",
-        from_name: data.from_name || "Admin Ujian",
-      });
+      
+      if (data && data.auth_user) {
+        setSmtpSettings(data);
+      }
     } catch (err) {
-      console.error("Info SMTP:", err.message); 
+      console.error("Info SMTP:", err.message);
     } finally {
       setIsLoading(false);
     }
@@ -56,7 +64,19 @@ const EmailPengirim = ({ onClose }) => {
     fetchSmtpSettings();
   }, [fetchSmtpSettings]);
 
-  // Handle Change
+  // Handle perubahan dropdown layanan
+  const handleServiceChange = (e) => {
+    const selectedValue = e.target.value;
+    const provider = providers.find(p => p.value === selectedValue);
+    
+    setSmtpSettings(prev => ({
+      ...prev,
+      service: selectedValue,
+      host: provider.host || prev.host,
+      port: provider.port || prev.port
+    }));
+  };
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setSmtpSettings((prev) => ({
@@ -65,20 +85,11 @@ const EmailPengirim = ({ onClose }) => {
     }));
   };
 
-  // Handle Save
+  // Simpan konfigurasi ke database
   const handleSave = async (e) => {
     e.preventDefault();
     setIsSaving(true);
     setMsg({ type: "", text: "" });
-
-    // Pastikan service selalu 'gmail' saat menyimpan
-    const settingsToSave = {
-      ...smtpSettings,
-      service: "gmail",
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false,
-    };
 
     const token = sessionStorage.getItem("adminToken");
     try {
@@ -88,12 +99,14 @@ const EmailPengirim = ({ onClose }) => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(settingsToSave),
+        body: JSON.stringify(smtpSettings),
       });
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Gagal menyimpan SMTP");
 
       setMsg({ type: "success", text: "Pengaturan email berhasil disimpan!" });
+      if (onClose) setTimeout(() => onClose(), 2000);
     } catch (error) {
       setMsg({ type: "error", text: error.message });
     } finally {
@@ -115,131 +128,194 @@ const EmailPengirim = ({ onClose }) => {
       <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center">
         <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
           <FaEnvelope className="text-blue-600" />
-          Konfigurasi Email Pengirim (Gmail)
+          Konfigurasi Email Pengirim
         </h3>
         {onClose && (
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            &times;
-          </button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
         )}
       </div>
 
-      {/* Body */}
       <div className="p-6">
-        {/* Notifikasi */}
+        {/* Notifikasi Status */}
         {msg.text && (
-          <div
-            className={`mb-4 p-3 rounded-md text-sm flex items-center gap-2 ${
-              msg.type === "success"
-                ? "bg-green-50 text-green-700 border border-green-200"
-                : "bg-red-50 text-red-700 border border-red-200"
-            }`}
-          >
-            {msg.type === "success" ? (
-              <FaCheckCircle />
-            ) : (
-              <FaExclamationTriangle />
-            )}
+          <div className={`mb-4 p-3 rounded-md text-sm flex items-center gap-2 ${msg.type === "success" ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+            {msg.type === "success" ? <FaCheckCircle /> : <FaExclamationTriangle />}
             {msg.text}
           </div>
         )}
 
         <form onSubmit={handleSave} className="space-y-4">
-          {/* KETERANGAN APP PASSWORD GMAIL (Selalu tampil) */}
-          <div className="p-3 bg-blue-50 text-blue-800 text-xs rounded-md border border-blue-200 flex items-start gap-2">
+          
+          {/* 1. Dropdown Pilihan Layanan */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Pilih Layanan Email</label>
+            <div className="relative">
+              <FaCogs className="absolute left-3 top-3 text-gray-400" />
+              <select
+                name="service"
+                value={smtpSettings.service}
+                onChange={handleServiceChange}
+                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white cursor-pointer"
+              >
+                {providers.map((p) => (
+                  <option key={p.value} value={p.value}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* 2. Catatan Dinamis Berdasarkan Layanan */}
+          <div className="p-3 bg-blue-50 text-blue-800 text-xs rounded-md border border-blue-200 flex items-start gap-2 animate-fadeIn">
             <FaInfoCircle className="flex-shrink-0 mt-0.5 text-blue-500" />
             <div>
-              <p className="font-semibold mb-1">Penting untuk Gmail:</p>
-              <ul className="list-disc list-inside space-y-1">
-                <li>Jangan gunakan password akun Google biasa Anda.</li>
-                <li>
-                  Anda wajib menggunakan <b>App Password</b>.
-                </li>
-                <li>
-                  Aktifkan 2-Step Verification di akun Google Anda terlebih
-                  dahulu.
-                </li>
-                <li>
-                  Buat App Password di sini:{" "}
-                  <a
-                    href="https://myaccount.google.com/apppasswords"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline font-medium hover:text-blue-900"
-                  >
-                    https://myaccount.google.com/apppasswords
-                  </a>
-                </li>
-              </ul>
+              {smtpSettings.service === "gmail" && (
+                <>
+                  <p className="font-semibold mb-1 text-red-600 text-sm">Panduan Gmail (Google):</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>Username: Alamat email Gmail lengkap Anda.</li>
+                    <li>Password: <b>App Password</b> (16 digit), bukan password email biasa.</li>
+                    <li>Aktifkan Verifikasi 2 Langkah untuk membuat Sandi Aplikasi.</li>
+                    <li>Buat di: <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" className="underline font-medium hover:text-blue-900">Google App Passwords</a></li>
+                  </ul>
+                </>
+              )}
+              {smtpSettings.service === "brevo" && (
+                <>
+                  <p className="font-semibold mb-1 text-indigo-700 text-sm">Panduan Brevo (Sendinblue):</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>Username: Alamat email yang terdaftar di Brevo.</li>
+                    <li>Password: <b>SMTP Key</b> dari Dashboard Brevo (Menu SMTP & API).</li>
+                    <li>Pastikan pengirim sudah diverifikasi di bagian "Sender".</li>
+                  </ul>
+                </>
+              )}
+              {smtpSettings.service === "mailtrap" && (
+                <>
+                  <p className="font-semibold mb-1 text-amber-700 text-sm">Panduan Mailtrap (Testing):</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>Gunakan <b>Username</b> & <b>Password</b> dari Inbox Setup di Mailtrap.</li>
+                    <li>Layanan ini hanya untuk simulasi; email tidak terkirim ke alamat asli.</li>
+                  </ul>
+                </>
+              )}
+              {smtpSettings.service === "custom" && (
+                <>
+                  <p className="font-semibold mb-1 text-emerald-700 text-sm">Panduan SMTP Hosting Manual:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>Username: Alamat email lengkap hosting (contoh: <i>admin@domain.com</i>).</li>
+                    <li>Password: Password akun email tersebut (<b>Bukan</b> password database/cPanel).</li>
+                    <li>Host: Biasanya <i>mail.domain.com</i> atau <i>smtp.domain.com</i>.</li>
+                    <li>Port: <b>465</b> (SSL) atau <b>587</b> (TLS).</li>
+                  </ul>
+                </>
+              )}
             </div>
           </div>
 
-          {/* Nama Pengirim */}
+          {/* 3. Nama Pengirim */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Nama Pengirim (di Email Peserta)
-            </label>
-            <input
-              type="text"
-              name="from_name"
-              value={smtpSettings.from_name}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 placeholder:text-gray-400"
-              placeholder="Contoh: Panitia Ujian BPS"
-            />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nama Pengirim (Display Name)</label>
+            <div className="relative">
+              <FaUser className="absolute left-3 top-3 text-gray-400" />
+              <input
+                type="text"
+                name="from_name"
+                value={smtpSettings.from_name}
+                onChange={handleChange}
+                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 transition"
+                placeholder="Contoh: Panitia Ujian Sekolah"
+                required
+              />
+            </div>
           </div>
 
-          {/* Email & Password */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* SMTP Host */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email Pengirim (Gmail)
-              </label>
-              <input
-                type="email"
-                name="auth_user"
-                value={smtpSettings.auth_user}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 placeholder:text-gray-400"
-                placeholder="email@gmail.com"
-                required
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Host</label>
+              <div className="relative">
+                <FaServer className="absolute left-3 top-3 text-gray-400" />
+                <input
+                  type="text"
+                  name="host"
+                  value={smtpSettings.host}
+                  onChange={handleChange}
+                  disabled={smtpSettings.service !== "custom"}
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
+                  required
+                />
+              </div>
             </div>
+
+            {/* SMTP Port */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Password Aplikasi (App Password)
-              </label>
-              <input
-                type="password"
-                name="auth_pass"
-                value={smtpSettings.auth_pass}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 font-mono placeholder:text-gray-400"
-                placeholder="password dari google"
-                required
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Port</label>
+              <div className="relative">
+                <FaHashtag className="absolute left-3 top-3 text-gray-400" />
+                <input
+                  type="number"
+                  name="port"
+                  value={smtpSettings.port}
+                  onChange={handleChange}
+                  disabled={smtpSettings.service !== "custom"}
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Username / Email */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Username / Email SMTP</label>
+              <div className="relative">
+                <FaEnvelope className="absolute left-3 top-3 text-gray-400" />
+                <input
+                  type="email"
+                  name="auth_user"
+                  value={smtpSettings.auth_user}
+                  onChange={handleChange}
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 transition"
+                  placeholder="admin@domain.com"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Password Email */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Password Email / Key</label>
+              <div className="relative">
+                <FaLock className="absolute left-3 top-3 text-gray-400" />
+                <input
+                  type="password"
+                  name="auth_pass"
+                  value={smtpSettings.auth_pass}
+                  onChange={handleChange}
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 font-mono transition"
+                  placeholder="••••••••••••"
+                  required
+                />
+              </div>
             </div>
           </div>
 
-          {/* Tombol Simpan */}
-          <div className="flex justify-end pt-4">
+          {/* Action Buttons */}
+          <div className="flex justify-end pt-4 gap-2">
+            {onClose && (
+              <button 
+                type="button" 
+                onClick={onClose} 
+                className="px-4 py-2 border border-gray-300 text-gray-600 rounded-md hover:bg-gray-50 font-semibold transition"
+              >
+                Batal
+              </button>
+            )}
             <button
               type="submit"
               disabled={isSaving}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 transition disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 transition shadow-sm disabled:opacity-50"
             >
-              {isSaving ? (
-                <>
-                  <FaSpinner className="animate-spin" /> Menyimpan...
-                </>
-              ) : (
-                <>
-                  <FaSave /> Simpan Konfigurasi
-                </>
-              )}
+              {isSaving ? <><FaSpinner className="animate-spin" /> Menyimpan...</> : <><FaSave /> Simpan Konfigurasi</>}
             </button>
           </div>
         </form>

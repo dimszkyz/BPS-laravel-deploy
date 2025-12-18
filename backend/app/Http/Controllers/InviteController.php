@@ -17,12 +17,6 @@ class InviteController extends Controller
     /**
      * Helper: Setup Email Config Dinamis
      */
-    /**
-     * Helper: Setup Email Config Dinamis
-     */
-    /**
-     * Helper: Setup Email Config Dinamis
-     */
     private function setupMailer()
     {
         $userId = Auth::id();
@@ -32,13 +26,17 @@ class InviteController extends Controller
             throw new \Exception("Gagal mengirim undangan! Harap konfigurasi terlebih dahulu di pengaturan email!");
         }
 
-        // 1. [TAMBAHAN PENTING] Paksa gunakan driver 'smtp' sebagai default
-        // Tanpa baris ini, Laravel mungkin tetap menggunakan driver 'log' dari .env
+        // 1. Paksa gunakan driver 'smtp' sebagai default
         Config::set('mail.default', 'smtp'); 
 
-        // 2. [MODIFIKASI] Set konfigurasi SMTP lengkap dalam satu array
-        // Menggunakan array config penuh lebih stabil untuk menimpa settingan default
-        $encryption = $smtp->port == 465 ? 'ssl' : 'tls';
+        // 2. Deteksi Enkripsi Otomatis berdasarkan Port
+        // Port 465 biasanya SSL, Port 587 biasanya TLS, lainnya (25/8025) seringkali null
+        $encryption = null;
+        if ($smtp->port == 465) {
+            $encryption = 'ssl';
+        } elseif ($smtp->port == 587) {
+            $encryption = 'tls';
+        }
         
         Config::set('mail.mailers.smtp', [
             'transport' => 'smtp',
@@ -50,8 +48,7 @@ class InviteController extends Controller
             'timeout'    => null,
             'local_domain' => env('MAIL_EHLO_DOMAIN'),
             
-            // [OPSIONAL TAPI DISARANKAN] Bypass SSL Check
-            // Diperlukan jika server lokal Anda gagal memvalidasi sertifikat SSL Google
+            // Bypass SSL Check untuk mencegah kegagalan sertifikat pada server hosting
             'stream'     => [
                 'ssl' => [
                     'allow_self_signed' => true,
@@ -132,7 +129,6 @@ class InviteController extends Controller
                 ];
 
                 // 3. Kirim Email
-                // 3. Kirim Email
                 Mail::send([], [], function ($message) use ($email, $details, $exam) {
                     $message->to($email)
                             ->subject("Undangan Ujian: " . $exam->keterangan)
@@ -162,16 +158,14 @@ class InviteController extends Controller
 
             } catch (\Exception $e) {
                 DB::rollBack();
-                // [TAMBAHAN] Log error ke file storage/logs/laravel.log
                 \Illuminate\Support\Facades\Log::error("Mail Error untuk $email: " . $e->getMessage()); 
                 $errors[] = ['email' => $email, 'error' => $e->getMessage()];
             }
         }
 
         if ($successCount === 0 && count($errors) > 0) {
-            // Jika semua gagal, return 500
             return response()->json([
-                'message' => 'Gagal mengirim undangan. Periksa koneksi internet atau password aplikasi email Anda.', 
+                'message' => 'Gagal mengirim undangan. Periksa konfigurasi SMTP atau port Anda.', 
                 'errors' => $errors
             ], 500);
         }
@@ -184,7 +178,6 @@ class InviteController extends Controller
 
     /**
      * POST /api/invite/login
-     * Login Peserta
      */
     public function login(Request $request)
     {
@@ -216,7 +209,6 @@ class InviteController extends Controller
 
     /**
      * GET /api/invite/list
-     * Daftar Undangan
      */
     public function index(Request $request)
     {
@@ -227,12 +219,9 @@ class InviteController extends Controller
             ->orderBy('created_at', 'desc')
             ->limit(100);
 
-        // Jika Superadmin & ada target_admin_id, filter berdasarkan target
         if ($user->role === 'superadmin' && $targetAdminId) {
             $query->where('admin_id', $targetAdminId);
-        } 
-        // Default: filter punya sendiri
-        else {
+        } else {
             $query->where('admin_id', $user->id);
         }
 
@@ -254,7 +243,6 @@ class InviteController extends Controller
 
     /**
      * DELETE /api/invite/:id
-     * Hapus Undangan
      */
     public function destroy(Request $request, $id)
     {
@@ -264,7 +252,6 @@ class InviteController extends Controller
             return response()->json(['message' => 'Undangan tidak ditemukan'], 404);
         }
 
-        // Cek kepemilikan
         if ($request->user()->role !== 'superadmin' && $invitation->admin_id !== $request->user()->id) {
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
