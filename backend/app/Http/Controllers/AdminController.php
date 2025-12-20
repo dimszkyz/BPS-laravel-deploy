@@ -6,15 +6,14 @@ use App\Models\Admin;
 use App\Models\SmtpSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 
 class AdminController extends Controller
 {
     /**
-     * Helper: Setup Email Config
+     * Method setupMailer dihapus atau dibiarkan saja jika masih digunakan
+     * oleh fitur lain seperti forgot password di controller ini (jika ada).
      */
     private function setupMailer($userId)
     {
@@ -25,33 +24,33 @@ class AdminController extends Controller
                 return false;
             }
 
-            Config::set('mail.default', 'smtp'); 
+            config(['mail.default' => 'smtp']); 
 
             $encryption = $smtp->port == 465 ? 'ssl' : 'tls';
             
-            Config::set('mail.mailers.smtp', [
-                'transport' => 'smtp',
-                'host'       => $smtp->host,
-                'port'       => $smtp->port,
-                'encryption' => $encryption,
-                'username'   => $smtp->auth_user,
-                'password'   => $smtp->auth_pass,
-                'timeout'    => null,
-                'auth_mode'  => null,
-                'stream'     => [
-                    'ssl' => [
-                        'allow_self_signed' => true,
-                        'verify_peer'       => false,
-                        'verify_peer_name'  => false,
+            config([
+                'mail.mailers.smtp' => [
+                    'transport' => 'smtp',
+                    'host'       => $smtp->host,
+                    'port'       => $smtp->port,
+                    'encryption' => $encryption,
+                    'username'   => $smtp->auth_user,
+                    'password'   => $smtp->auth_pass,
+                    'timeout'    => null,
+                    'auth_mode'  => null,
+                    'stream'     => [
+                        'ssl' => [
+                            'allow_self_signed' => true,
+                            'verify_peer'       => false,
+                            'verify_peer_name'  => false,
+                        ],
                     ],
                 ],
+                'mail.from.address' => $smtp->auth_user,
+                'mail.from.name' => $smtp->from_name ?? 'Admin Sistem'
             ]);
 
-            Config::set('mail.from.address', $smtp->auth_user);
-            Config::set('mail.from.name', $smtp->from_name ?? 'Admin Sistem');
-
             app()->forgetInstance('mailer');
-            Mail::clearResolvedInstances();
             
             return true;
         } catch (\Throwable $e) {
@@ -69,6 +68,10 @@ class AdminController extends Controller
         return response()->json($admins);
     }
 
+    /**
+     * POST /api/admin/register
+     * Simpan admin baru tanpa kirim email
+     */
     public function store(Request $request)
     {
         if ($request->user()->role !== 'superadmin') {
@@ -81,57 +84,29 @@ class AdminController extends Controller
             'password' => 'required|min:6',
         ]);
 
-        if (!$this->setupMailer($request->user()->id)) {
-             return response()->json([
-                'message' => 'Gagal! Konfigurasi Email (SMTP) Superadmin belum disetting.'
-            ], 400);
-        }
-
-        DB::beginTransaction();
         try {
+            // Langsung buat data admin di database
             $admin = Admin::create([
                 'username' => $request->username,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
-                'role' => 'admin', 
+                'role' => $request->role ?? 'admin', // Mengambil role dari input frontend
                 'is_active' => true
             ]);
 
-            $details = [
-                'username' => $admin->username,
-                'password' => $request->password,
-                'email' => $admin->email,
-                'loginLink' => $request->header('origin') . '/admin/login',
-                'from_name' => Config::get('mail.from.name')
-            ];
-
-            Mail::send([], [], function ($message) use ($details) {
-                $message->to($details['email'])
-                        ->subject("Pendaftaran Akun Admin Baru")
-                        ->html("
-                            <div style='font-family: Arial, sans-serif; color: #333;'>
-                                <h2>Selamat Datang</h2>
-                                <p>Halo <b>{$details['username']}</b>, akun Admin Anda telah dibuat.</p>
-                                <ul>
-                                    <li>Email: {$details['email']}</li>
-                                    <li>Password: {$details['password']}</li>
-                                </ul>
-                                <a href='{$details['loginLink']}'>Login ke Dashboard</a>
-                            </div>
-                        ");
-            });
-
-            DB::commit();
-            return response()->json(['message' => 'Admin berhasil ditambahkan.', 'data' => $admin], 201);
+            return response()->json([
+                'message' => 'Admin berhasil ditambahkan.', 
+                'data' => $admin
+            ], 201);
 
         } catch (\Throwable $e) {
-            DB::rollBack();
             Log::error("Add Admin Error: " . $e->getMessage());
-            return response()->json(['message' => 'Gagal menambahkan admin: ' . $e->getMessage()], 500);
+            return response()->json([
+                'message' => 'Gagal menambahkan admin: ' . $e->getMessage()
+            ], 500);
         }
     }
 
-    // HAPUS ADMIN (Destroy)
     public function destroy(Request $request, $id)
     {
         if ($request->user()->role !== 'superadmin') {
@@ -143,19 +118,15 @@ class AdminController extends Controller
         
         $actor = $request->user();
 
-        // 1. Tidak bisa hapus diri sendiri
         if ($target->id === $actor->id) {
             return response()->json(['message' => 'Tidak bisa menghapus akun sendiri'], 400);
         }
 
-        // 2. Proteksi Super Admin Utama (ID 1) - Tidak ada yang bisa menghapusnya
         if ($target->id === 1) {
             return response()->json(['message' => 'Super Admin Utama tidak dapat dihapus.'], 403);
         }
 
-        // 3. Logika Hierarki: Jika target adalah Super Admin
         if ($target->role === 'superadmin') {
-            // Hanya Super Admin Utama (ID 1) yang boleh menghapus Super Admin lain
             if ($actor->id !== 1) {
                 return response()->json(['message' => 'Hanya Super Admin Utama yang dapat menghapus Super Admin lain.'], 403);
             }
@@ -170,7 +141,6 @@ class AdminController extends Controller
         return response()->json(['message' => 'pong', 'time' => now()]);
     }
 
-    // UPDATE ROLE
     public function updateRole(Request $request, $id)
     {
         if ($request->user()->role !== 'superadmin') return response()->json(['message' => 'Unauthorized'], 403);
@@ -180,14 +150,11 @@ class AdminController extends Controller
         
         $actor = $request->user();
 
-        // 1. Proteksi Super Admin Utama (ID 1) - Role tidak bisa diubah (mencegah degradasi diri sendiri/oleh orang lain)
         if ($target->id === 1) {
             return response()->json(['message' => 'Role Super Admin Utama tidak dapat diubah.'], 403);
         }
 
-        // 2. Logika Hierarki: Jika target adalah Super Admin
         if ($target->role === 'superadmin') {
-            // Hanya Super Admin Utama (ID 1) yang boleh mengubah role Super Admin lain
             if ($actor->id !== 1) {
                 return response()->json(['message' => 'Hanya Super Admin Utama yang dapat mengubah role Super Admin lain.'], 403);
             }
@@ -199,10 +166,8 @@ class AdminController extends Controller
         return response()->json(['message' => 'Role updated']);
     }
 
-    // UPDATE USERNAME
     public function updateUsername(Request $request, $id)
     {
-        // Tetap izinkan semua superadmin mengubah username (atau batasi jika perlu)
         if ($request->user()->role !== 'superadmin' && $request->user()->id != $id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
@@ -212,16 +177,12 @@ class AdminController extends Controller
         $admin = Admin::find($id);
         if (!$admin) return response()->json(['message' => 'Admin not found'], 404);
 
-        // Opsional: Proteksi Username Root jika diinginkan (uncomment jika perlu)
-        // if ($admin->id === 1 && $request->user()->id !== 1) return response()->json(['message' => 'Forbidden'], 403);
-
         $admin->username = $request->username;
         $admin->save();
 
         return response()->json(['message' => 'Username updated', 'username' => $admin->username]);
     }
 
-    // TOGGLE STATUS (Aktif/Nonaktif)
     public function toggleStatus(Request $request, $id)
     {
         $target = Admin::find($id);
@@ -229,14 +190,11 @@ class AdminController extends Controller
 
         $actor = $request->user();
 
-        // 1. Proteksi Super Admin Utama (ID 1) - Tidak bisa dinonaktifkan
         if ($target->id === 1) {
             return response()->json(['message' => 'Super Admin Utama tidak dapat dinonaktifkan.'], 403);
         }
 
-        // 2. Logika Hierarki: Jika target adalah Super Admin
         if ($target->role === 'superadmin') {
-            // Hanya Super Admin Utama (ID 1) yang boleh menonaktifkan Super Admin lain
             if ($actor->id !== 1) {
                 return response()->json(['message' => 'Hanya Super Admin Utama yang dapat menonaktifkan Super Admin lain.'], 403);
             }
