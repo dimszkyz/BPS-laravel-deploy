@@ -23,14 +23,14 @@ class InviteController extends Controller
         $smtp = SmtpSetting::where('user_id', $userId)->first(); 
 
         if (!$smtp || empty($smtp->auth_user) || empty($smtp->auth_pass)) {
-            throw new \Exception("Gagal mengirim undangan! Harap konfigurasi terlebih dahulu di pengaturan email!");
+            // Melempar exception agar bisa ditangkap di sendInvite
+            throw new \Exception("SMTP_NOT_CONFIGURED");
         }
 
         // 1. Paksa gunakan driver 'smtp' sebagai default
         Config::set('mail.default', 'smtp'); 
 
         // 2. Deteksi Enkripsi Otomatis berdasarkan Port
-        // Port 465 biasanya SSL, Port 587 biasanya TLS, lainnya (25/8025) seringkali null
         $encryption = null;
         if ($smtp->port == 465) {
             $encryption = 'ssl';
@@ -69,7 +69,7 @@ class InviteController extends Controller
 
     /**
      * POST /api/invite
-     * Kirim Undangan
+     * Kirim Undangan (Bisa memproses tanpa SMTP)
      */
     public function sendInvite(Request $request)
     {
@@ -86,14 +86,14 @@ class InviteController extends Controller
             return response()->json(['message' => 'Akses ditolak.'], 403);
         }
 
-        // Setup Mailer sebelum loop
+        // Cek apakah mailer bisa di-setup
+        $canSendEmail = false;
         try {
             $this->setupMailer(); 
+            $canSendEmail = true;
         } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ], 400);
+            // Jika SMTP belum diatur, flag pengiriman email dimatikan
+            $canSendEmail = false;
         }
 
         $successCount = 0;
@@ -109,7 +109,7 @@ class InviteController extends Controller
 
             DB::beginTransaction();
             try {
-                // 1. Simpan Data Undangan
+                // 1. Tetap Simpan Data Undangan ke Database
                 Invitation::create([
                     'email' => $email,
                     'exam_id' => $exam->id,
@@ -119,59 +119,66 @@ class InviteController extends Controller
                     'login_count' => 0
                 ]);
 
-                // 2. Siapkan Data Email
-                $details = [
-                    'exam_name' => $exam->keterangan,
-                    'code' => $loginCode,
-                    'message' => $request->pesan,
-                    'max_logins' => $request->max_logins,
-                    'link' => $request->header('origin') ?? 'http://localhost:5173'
-                ];
+                // 2. Kirim Email HANYA JIKA SMTP terkonfigurasi
+                if ($canSendEmail) {
+                    $details = [
+                        'exam_name' => $exam->keterangan,
+                        'code' => $loginCode,
+                        'message' => $request->pesan,
+                        'max_logins' => $request->max_logins,
+                        'link' => $request->header('origin') ?? 'http://localhost:5173'
+                    ];
 
-                // 3. Kirim Email
-                Mail::send([], [], function ($message) use ($email, $details, $exam) {
-                    $message->to($email)
-                            ->subject("Undangan Ujian: " . $exam->keterangan)
-                            ->html("
-                                {$details['message']}
-                                <hr style='margin-top: 20px; margin-bottom: 20px; border: 0; border-top: 1px solid #eee;' />
-                                <p style='font-size: 14px; color: #333;'>
-                                    Anda diundang untuk ujian: <b>{$details['exam_name']}</b>
-                                </p>
-                                <p style='font-size: 14px; color: #333;'>
-                                    Silakan login menggunakan <b>Email Anda</b> dan <b>Kode Login</b> berikut:
-                                </p>
-                                <p style='font-size: 20px; font-weight: bold; color: #007bff; margin: 10px 0; letter-spacing: 2px;'>
-                                    {$details['code']}
-                                </p>
-                                <p style='font-size: 12px; color: #555;'>(Kode ini hanya dapat digunakan {$details['max_logins']} kali)</p>
-                                <p style='margin-top: 20px; margin-bottom: 15px;'>
-                                    <a href='{$details['link']}' target='_blank' style='padding: 10px 15px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; font-size: 14px;'>
-                                        Buka Halaman Login Ujian
-                                    </a>
-                                </p>
-                            ");
-                });
+                    Mail::send([], [], function ($message) use ($email, $details, $exam) {
+                        $message->to($email)
+                                ->subject("Undangan Ujian: " . $exam->keterangan)
+                                ->html("
+                                    {$details['message']}
+                                    <hr style='margin-top: 20px; margin-bottom: 20px; border: 0; border-top: 1px solid #eee;' />
+                                    <p style='font-size: 14px; color: #333;'>
+                                        Anda diundang untuk ujian: <b>{$details['exam_name']}</b>
+                                    </p>
+                                    <p style='font-size: 14px; color: #333;'>
+                                        Silakan login menggunakan <b>Email Anda</b> dan <b>Kode Login</b> berikut:
+                                    </p>
+                                    <p style='font-size: 20px; font-weight: bold; color: #007bff; margin: 10px 0; letter-spacing: 2px;'>
+                                        {$details['code']}
+                                    </p>
+                                    <p style='font-size: 12px; color: #555;'>(Kode ini hanya dapat digunakan {$details['max_logins']} kali)</p>
+                                    <p style='margin-top: 20px; margin-bottom: 15px;'>
+                                        <a href='{$details['link']}' target='_blank' style='padding: 10px 15px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; font-size: 14px;'>
+                                            Buka Halaman Login Ujian
+                                        </a>
+                                    </p>
+                                ");
+                    });
+                }
 
                 DB::commit();
                 $successCount++;
 
             } catch (\Exception $e) {
                 DB::rollBack();
-                \Illuminate\Support\Facades\Log::error("Mail Error untuk $email: " . $e->getMessage()); 
+                \Illuminate\Support\Facades\Log::error("Proses Undangan Gagal untuk $email: " . $e->getMessage()); 
                 $errors[] = ['email' => $email, 'error' => $e->getMessage()];
             }
         }
 
+        // Tentukan pesan response
+        $finalMessage = "Berhasil memproses $successCount undangan.";
+        if (!$canSendEmail) {
+            $finalMessage .= " (Data disimpan tanpa kirim email karena SMTP belum dikonfigurasi)";
+        }
+
         if ($successCount === 0 && count($errors) > 0) {
             return response()->json([
-                'message' => 'Gagal mengirim undangan. Periksa konfigurasi SMTP atau port Anda.', 
+                'message' => 'Gagal memproses undangan.', 
                 'errors' => $errors
             ], 500);
         }
 
         return response()->json([
-            'message' => "Berhasil mengirim $successCount undangan.",
+            'message' => $finalMessage,
             'errors' => $errors
         ]);
     }

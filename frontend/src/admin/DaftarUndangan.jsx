@@ -12,14 +12,15 @@ import {
   FaExclamationTriangle,
   FaChevronLeft,
   FaChevronRight,
-  FaSearch, // [BARU] Import icon search
+  FaSearch,
+  FaFileDownload, 
 } from "react-icons/fa";
 
 const API_URL = "https://kompeta.web.bps.go.id";
 
 const DaftarUndangan = ({ refreshTrigger }) => {
   // --- STATE DATA ---
-  const [allData, setAllData] = useState([]); // Menyimpan semua data mentah dari API
+  const [allData, setAllData] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [copiedCode, setCopiedCode] = useState(null);
@@ -28,7 +29,7 @@ const DaftarUndangan = ({ refreshTrigger }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10); 
 
-  // --- STATE PENCARIAN [BARU] ---
+  // --- STATE PENCARIAN ---
   const [searchQuery, setSearchQuery] = useState("");
 
   // --- STATE DELETE ---
@@ -54,10 +55,7 @@ const DaftarUndangan = ({ refreshTrigger }) => {
         throw new Error(errorMsg);
       }
       const data = await response.json();
-      
-      // Simpan data mentah ke state
       setAllData(data);
-      // Reset ke halaman 1 setiap kali fetch ulang
       setCurrentPage(1); 
     } catch (err) {
       console.error(err);
@@ -71,8 +69,7 @@ const DaftarUndangan = ({ refreshTrigger }) => {
     fetchData();
   }, [fetchData, refreshTrigger]);
 
-  // --- LOGIKA FILTERING [BARU] ---
-  // Memfilter allData berdasarkan searchQuery sebelum dipaginasi
+  // --- LOGIKA FILTERING ---
   const filteredData = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
     if (!query) return allData;
@@ -81,27 +78,74 @@ const DaftarUndangan = ({ refreshTrigger }) => {
       const email = (item.email || "").toLowerCase();
       const code = (item.login_code || "").toLowerCase();
       const examName = (item.keterangan_ujian || "").toLowerCase();
-      
-      // Cari cocok di email, kode login, atau nama ujian
       return email.includes(query) || code.includes(query) || examName.includes(query);
     });
   }, [allData, searchQuery]);
 
-  // Reset halaman ke 1 jika user mengetik pencarian
+  // --- HELPER FORMAT TANGGAL ---
+  const formatTanggal = (isoString) => {
+    try {
+      if (!isoString || isoString === '-') return '-';
+      return new Date(isoString).toLocaleString("id-ID", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return isoString;
+    }
+  };
+
+  // --- [PERBAIKAN] FUNGSI EXPORT CSV UNTUK EXCEL ---
+  const handleExportCSV = () => {
+    if (filteredData.length === 0) {
+      alert("Tidak ada data untuk diekspor.");
+      return;
+    }
+
+    // Header Kolom (A, B, C, D)
+    const headers = ["Email Peserta", "Kode Login", "Batas", "Waktu Kirim"];
+    
+    // Mapping Baris Data
+    const rows = filteredData.map(item => [
+      item.email,
+      item.login_code,
+      `${item.login_count} / ${item.max_logins}`, // Kolom Batas
+      formatTanggal(item.sent_at)                // Waktu Kirim yang sudah diformat
+    ]);
+
+    // Membuat konten CSV
+    // "sep=," memberitahu Excel bahwa pemisah kolom adalah koma
+    const csvContent = [
+      "sep=,", 
+      headers.join(","),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(","))
+    ].join("\n");
+
+    // Menggunakan BOM (\uFEFF) agar Excel mengenali encoding UTF-8 dengan benar
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Data_Undangan_Ujian_${new Date().getTime()}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery]);
 
-  // --- LOGIKA PAGINATION & GROUPING (DIPERBARUI) ---
+  // --- LOGIKA PAGINATION & GROUPING ---
   const groupedInvitations = useMemo(() => {
-    // 1. Hitung index potong data
     const indexOfLastItem = currentPage * itemsPerPage;
     const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-    
-    // 2. Ambil data untuk halaman ini dari FILTERED DATA (Bukan allData)
     const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem);
 
-    // 3. Grouping data yang sudah dipotong berdasarkan Exam ID
     return currentItems.reduce((acc, invite) => {
       const examId = invite.exam_id || "unknown";
       if (!acc[examId]) {
@@ -113,12 +157,10 @@ const DaftarUndangan = ({ refreshTrigger }) => {
       acc[examId].list.push(invite);
       return acc;
     }, {});
-  }, [filteredData, currentPage, itemsPerPage]); // Dependency diubah ke filteredData
+  }, [filteredData, currentPage, itemsPerPage]);
 
-  // Hitung total halaman berdasarkan data yang sudah difilter
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
 
-  // --- Handler Pagination ---
   const handlePageChange = (pageNumber) => {
     setCurrentPage(pageNumber);
   };
@@ -140,20 +182,15 @@ const DaftarUndangan = ({ refreshTrigger }) => {
 
   const handleConfirmDelete = async () => {
     if (!itemToDelete) return;
-
     const { id } = itemToDelete;
     setDeletingId(id);
-
     try {
       const token = sessionStorage.getItem("adminToken");
       const response = await fetch(`${API_URL}/api/invite/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
-
       if (!response.ok) throw new Error("Gagal membatalkan undangan.");
-
-      // Refresh data (Fetch ulang agar data sinkron)
       fetchData();
       setShowDeleteModal(false);
       setItemToDelete(null);
@@ -164,30 +201,16 @@ const DaftarUndangan = ({ refreshTrigger }) => {
     }
   };
 
-  const formatTanggal = (isoString) => {
-    try {
-      return new Date(isoString).toLocaleString("id-ID", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return isoString;
-    }
-  };
-
   return (
     <div className="w-full relative flex flex-col min-h-[400px]">
-      {/* Header Section (DIPERBARUI UI-NYA) */}
+      {/* Header Section */}
       <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-center gap-3">
         <h3 className="font-semibold text-gray-700 flex items-center gap-2 self-start sm:self-center">
           <FaHistory className="text-gray-500" /> Riwayat & Status Undangan
         </h3>
         
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-          {/* INPUT PENCARIAN BARU */}
+          {/* SEARCH */}
           <div className="relative w-full sm:w-auto flex-1 sm:flex-none">
             <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs" />
             <input 
@@ -200,7 +223,16 @@ const DaftarUndangan = ({ refreshTrigger }) => {
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            {/* Dropdown Limit per Halaman */}
+            {/* Tombol Export */}
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center justify-center gap-2 px-3 py-1.5 bg-green-600 border border-green-700 text-white rounded-md hover:bg-green-700 transition text-sm font-medium shadow-sm"
+              title="Unduh data ke Excel (CSV)"
+            >
+              <FaFileDownload />
+              <span>Export</span>
+            </button>
+
             <select 
               value={itemsPerPage}
               onChange={(e) => {
@@ -241,7 +273,6 @@ const DaftarUndangan = ({ refreshTrigger }) => {
           </div>
         )}
 
-        {/* Handling Tampilan Kosong (Data kosong vs Pencarian tidak ketemu) */}
         {!loading && !error && filteredData.length === 0 && (
           <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-lg">
             <p className="text-gray-500 font-medium">
@@ -258,7 +289,6 @@ const DaftarUndangan = ({ refreshTrigger }) => {
                 key={examId}
                 className="border border-gray-200 rounded-lg overflow-hidden shadow-sm animate-fade-in"
               >
-                {/* Group Header */}
                 <div className="bg-blue-50 px-4 py-3 border-b border-blue-100 flex items-center gap-2">
                   <FaListUl className="text-blue-600" />
                   <h4 className="font-semibold text-blue-800 text-sm md:text-base">
@@ -266,7 +296,6 @@ const DaftarUndangan = ({ refreshTrigger }) => {
                   </h4>
                 </div>
 
-                {/* Table */}
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm text-left">
                     <thead className="bg-gray-50 text-gray-500 uppercase text-xs tracking-wider font-semibold">
@@ -280,10 +309,7 @@ const DaftarUndangan = ({ refreshTrigger }) => {
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
                       {groupData.list.map((invite) => (
-                        <tr
-                          key={invite.id}
-                          className="hover:bg-gray-50 transition-colors"
-                        >
+                        <tr key={invite.id} className="hover:bg-gray-50 transition-colors">
                           <td className="py-3 px-4 text-gray-800 font-medium break-all align-middle">
                             {invite.email}
                           </td>
@@ -301,11 +327,7 @@ const DaftarUndangan = ({ refreshTrigger }) => {
                                 }`}
                                 title="Salin Kode"
                               >
-                                {copiedCode === invite.login_code ? (
-                                  <FaCheck />
-                                ) : (
-                                  <FaCopy />
-                                )}
+                                {copiedCode === invite.login_code ? <FaCheck /> : <FaCopy />}
                               </button>
                             </div>
                           </td>
@@ -352,16 +374,14 @@ const DaftarUndangan = ({ refreshTrigger }) => {
         )}
       </div>
 
-      {/* --- FOOTER: PAGINATION CONTROLS (DIPERBARUI) --- */}
+      {/* FOOTER: PAGINATION */}
       {!loading && !error && filteredData.length > 0 && (
         <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex flex-col md:flex-row justify-between items-center gap-4">
-            {/* Info Text */}
             <div className="text-sm text-gray-600">
                 Menampilkan <span className="font-semibold">{(currentPage - 1) * itemsPerPage + 1}</span> sampai <span className="font-semibold">{Math.min(currentPage * itemsPerPage, filteredData.length)}</span> dari <span className="font-semibold">{filteredData.length}</span> data
                 {searchQuery && <span className="text-gray-400 ml-1 text-xs">(difilter dari {allData.length} total)</span>}
             </div>
 
-            {/* Pagination Buttons */}
             <div className="flex items-center gap-2">
                 <button
                     onClick={() => handlePageChange(currentPage - 1)}
@@ -378,7 +398,6 @@ const DaftarUndangan = ({ refreshTrigger }) => {
                              pageNum = currentPage - 3 + i;
                              if(pageNum > totalPages) return null; 
                          }
-                         
                          return (
                             <button
                                 key={pageNum}
@@ -441,13 +460,7 @@ const DaftarUndangan = ({ refreshTrigger }) => {
                 disabled={deletingId !== null}
                 className="w-full py-2.5 px-4 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition duration-200 flex justify-center items-center gap-2"
               >
-                {deletingId ? (
-                  <FaSyncAlt className="animate-spin" />
-                ) : (
-                  <>
-                    <FaTrashAlt className="text-sm" /> Ya, Batalkan
-                  </>
-                )}
+                {deletingId ? <FaSyncAlt className="animate-spin" /> : <><FaTrashAlt className="text-sm" /> Ya, Batalkan</>}
               </button>
             </div>
           </div>
