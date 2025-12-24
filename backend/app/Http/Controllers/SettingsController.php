@@ -99,13 +99,13 @@ class SettingsController extends Controller
      */
     public function updateSmtp(Request $request)
     {
-        // [PERUBAHAN] Logika Validasi Kondisional
+        // 1. Validasi
         $rules = [
             'auth_user' => 'required',
             'auth_pass' => 'required',
         ];
 
-        // Jika user memilih "Tanpa Layanan", username & password boleh kosong
+        // Jika 'none', kita bypass validasi required
         if ($request->service === 'none') {
             $rules['auth_user'] = 'nullable';
             $rules['auth_pass'] = 'nullable';
@@ -113,6 +113,17 @@ class SettingsController extends Controller
 
         $validated = $request->validate($rules);
 
+        // 2. Tentukan User & Pass yang akan disimpan
+        // JIKA 'none', kita simpan tanda strip "-" agar database tidak error (karena kolom NOT NULL)
+        $userToSave = $request->auth_user;
+        $passToSave = $request->auth_pass;
+
+        if ($request->service === 'none') {
+            $userToSave = $userToSave ?? '-'; // Isi dummy
+            $passToSave = $passToSave ?? '-'; // Isi dummy
+        }
+
+        // 3. Simpan
         SmtpSetting::updateOrCreate(
             ['user_id' => Auth::id()],
             [
@@ -120,12 +131,15 @@ class SettingsController extends Controller
                 'host' => $request->host ?? 'smtp.gmail.com',
                 'port' => $request->port ?? 587,
                 'secure' => filter_var($request->secure, FILTER_VALIDATE_BOOLEAN),
-                'auth_user' => $request->auth_user,
-                'auth_pass' => $request->auth_pass,
+                
+                // Gunakan variabel yang sudah di-cek tadi
+                'auth_user' => $userToSave,
+                'auth_pass' => $passToSave,
+                
                 'from_name' => $request->from_name ?? 'Admin Ujian',
             ]
         );
 
-        return response()->json(['message' => 'Pengaturan email berhasil disimpan untuk akun ini.']);
+        return response()->json(['message' => 'Pengaturan email berhasil disimpan.']);
     }
 }

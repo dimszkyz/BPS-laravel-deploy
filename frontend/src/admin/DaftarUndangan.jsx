@@ -16,7 +16,7 @@ import {
   FaFileDownload, 
 } from "react-icons/fa";
 
-const API_URL = "https://kompeta.web.bps.go.id";
+const API_URL = "http://localhost:8000";
 
 const DaftarUndangan = ({ refreshTrigger }) => {
   // --- STATE DATA ---
@@ -98,38 +98,44 @@ const DaftarUndangan = ({ refreshTrigger }) => {
     }
   };
 
-  // --- [PERBAIKAN] FUNGSI EXPORT CSV UNTUK EXCEL ---
-  const handleExportCSV = () => {
-    if (filteredData.length === 0) {
-      alert("Tidak ada data untuk diekspor.");
+  // --- [PERBAIKAN] FUNGSI EXPORT CSV PER KATEGORI ---
+  // Menerima examId dan examName agar export spesifik per ujian
+  const handleExportCSV = (examId, examName) => {
+    // Filter data global berdasarkan ID Ujian yang diklik
+    // Menggunakan filteredData agar tetap menghormati hasil pencarian (jika ada search)
+    const dataToExport = filteredData.filter(item => String(item.exam_id) === String(examId));
+
+    if (dataToExport.length === 0) {
+      alert("Tidak ada data pada kategori ini untuk diekspor.");
       return;
     }
 
     // Header Kolom (A, B, C, D)
-    const headers = ["Email Peserta", "Kode Login", "Batas", "Waktu Kirim"];
+    const headers = ["Email Peserta", "Kode Login", "Batas", "Waktu Kirim", "Keterangan Ujian"];
     
     // Mapping Baris Data
-    const rows = filteredData.map(item => [
+    const rows = dataToExport.map(item => [
       item.email,
       item.login_code,
-      `${item.login_count} / ${item.max_logins}`, // Kolom Batas
-      formatTanggal(item.sent_at)                // Waktu Kirim yang sudah diformat
+      `${item.login_count} / ${item.max_logins}`, 
+      formatTanggal(item.sent_at),
+      item.keterangan_ujian
     ]);
 
-    // Membuat konten CSV
-    // "sep=," memberitahu Excel bahwa pemisah kolom adalah koma
     const csvContent = [
       "sep=,", 
       headers.join(","),
       ...rows.map(row => row.map(cell => `"${cell}"`).join(","))
     ].join("\n");
 
-    // Menggunakan BOM (\uFEFF) agar Excel mengenali encoding UTF-8 dengan benar
+    // Bersihkan nama file dari karakter aneh
+    const safeName = examName.replace(/[^a-z0-9]/gi, '_').substring(0, 50);
+
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `Data_Undangan_Ujian_${new Date().getTime()}.csv`);
+    link.setAttribute("download", `Undangan_${safeName}_${new Date().getTime()}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -223,16 +229,8 @@ const DaftarUndangan = ({ refreshTrigger }) => {
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            {/* Tombol Export */}
-            <button
-              onClick={handleExportCSV}
-              className="flex items-center justify-center gap-2 px-3 py-1.5 bg-green-600 border border-green-700 text-white rounded-md hover:bg-green-700 transition text-sm font-medium shadow-sm"
-              title="Unduh data ke Excel (CSV)"
-            >
-              <FaFileDownload />
-              <span>Export</span>
-            </button>
-
+            {/* [MODIFIKASI] Tombol Export Global DIHAPUS dari sini */}
+            
             <select 
               value={itemsPerPage}
               onChange={(e) => {
@@ -289,11 +287,23 @@ const DaftarUndangan = ({ refreshTrigger }) => {
                 key={examId}
                 className="border border-gray-200 rounded-lg overflow-hidden shadow-sm animate-fade-in"
               >
-                <div className="bg-blue-50 px-4 py-3 border-b border-blue-100 flex items-center gap-2">
-                  <FaListUl className="text-blue-600" />
-                  <h4 className="font-semibold text-blue-800 text-sm md:text-base">
-                    {groupData.keterangan}
-                  </h4>
+                {/* [MODIFIKASI] Header Card Ujian dengan Tombol Export Kanan */}
+                <div className="bg-blue-50 px-4 py-3 border-b border-blue-100 flex justify-between items-center gap-2">
+                  <div className="flex items-center gap-2">
+                    <FaListUl className="text-blue-600" />
+                    <h4 className="font-semibold text-blue-800 text-sm md:text-base">
+                      {groupData.keterangan}
+                    </h4>
+                  </div>
+                  
+                  {/* Tombol Export Per Kategori */}
+                  <button
+                    onClick={() => handleExportCSV(examId, groupData.keterangan)}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 transition text-xs font-medium shadow-sm"
+                    title={`Unduh data ${groupData.keterangan} ke Excel (CSV)`}
+                  >
+                    <FaFileDownload /> <span className="hidden sm:inline">Export</span>
+                  </button>
                 </div>
 
                 <div className="overflow-x-auto">
