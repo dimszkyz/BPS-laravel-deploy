@@ -7,7 +7,7 @@ use App\Models\SmtpSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Str; // Tambahkan ini untuk generate nama file unik
+use Illuminate\Support\Str; 
 
 class SettingsController extends Controller
 {
@@ -99,10 +99,19 @@ class SettingsController extends Controller
      */
     public function updateSmtp(Request $request)
     {
-        $validated = $request->validate([
+        // [PERUBAHAN] Logika Validasi Kondisional
+        $rules = [
             'auth_user' => 'required',
             'auth_pass' => 'required',
-        ]);
+        ];
+
+        // Jika user memilih "Tanpa Layanan", username & password boleh kosong
+        if ($request->service === 'none') {
+            $rules['auth_user'] = 'nullable';
+            $rules['auth_pass'] = 'nullable';
+        }
+
+        $validated = $request->validate($rules);
 
         SmtpSetting::updateOrCreate(
             ['user_id' => Auth::id()],

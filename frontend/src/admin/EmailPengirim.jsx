@@ -33,6 +33,7 @@ const EmailPengirim = ({ onClose }) => {
 
   // Daftar Provider SMTP untuk pengisian otomatis
   const providers = [
+    { name: "Tanpa Layanan (Simpan ke DB saja)", value: "none", host: "", port: 0 },
     { name: "Google / Gmail", value: "gmail", host: "smtp.gmail.com", port: 587 },
     { name: "Brevo (Sendinblue)", value: "brevo", host: "smtp-relay.brevo.com", port: 587 },
     { name: "Mailtrap", value: "mailtrap", host: "sandbox.smtp.mailtrap.io", port: 2525 },
@@ -50,7 +51,7 @@ const EmailPengirim = ({ onClose }) => {
       if (!res.ok) throw new Error("Gagal memuat pengaturan SMTP");
       const data = await res.json();
       
-      if (data && data.auth_user) {
+      if (data && data.service) {
         setSmtpSettings(data);
       }
     } catch (err) {
@@ -73,7 +74,10 @@ const EmailPengirim = ({ onClose }) => {
       ...prev,
       service: selectedValue,
       host: provider.host || prev.host,
-      port: provider.port || prev.port
+      port: provider.port || prev.port,
+      // Reset user/pass jika memilih 'none' agar bersih (opsional)
+      auth_user: selectedValue === "none" ? "" : prev.auth_user,
+      auth_pass: selectedValue === "none" ? "" : prev.auth_pass,
     }));
   };
 
@@ -165,52 +169,54 @@ const EmailPengirim = ({ onClose }) => {
           </div>
 
           {/* 2. Catatan Dinamis Berdasarkan Layanan */}
-          <div className="p-3 bg-blue-50 text-blue-800 text-xs rounded-md border border-blue-200 flex items-start gap-2 animate-fadeIn">
-            <FaInfoCircle className="flex-shrink-0 mt-0.5 text-blue-500" />
-            <div>
-              {smtpSettings.service === "gmail" && (
-                <>
-                  <p className="font-semibold mb-1 text-red-600 text-sm">Panduan Gmail (Google):</p>
-                  <ul className="list-disc list-inside space-y-1">
-                    <li>Username: Alamat email Gmail lengkap Anda.</li>
-                    <li>Password: <b>App Password</b> (16 digit), bukan password email biasa.</li>
-                    <li>Aktifkan Verifikasi 2 Langkah untuk membuat Sandi Aplikasi.</li>
-                    <li>Buat di: <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" className="underline font-medium hover:text-blue-900">Google App Passwords</a></li>
-                  </ul>
-                </>
-              )}
-              {smtpSettings.service === "brevo" && (
-                <>
-                  <p className="font-semibold mb-1 text-indigo-700 text-sm">Panduan Brevo (Sendinblue):</p>
-                  <ul className="list-disc list-inside space-y-1">
-                    <li>Username: Alamat email yang terdaftar di Brevo.</li>
-                    <li>Password: <b>SMTP Key</b> dari Dashboard Brevo (Menu SMTP & API).</li>
-                    <li>Pastikan pengirim sudah diverifikasi di bagian "Sender".</li>
-                  </ul>
-                </>
-              )}
-              {smtpSettings.service === "mailtrap" && (
-                <>
-                  <p className="font-semibold mb-1 text-amber-700 text-sm">Panduan Mailtrap (Testing):</p>
-                  <ul className="list-disc list-inside space-y-1">
-                    <li>Gunakan <b>Username</b> & <b>Password</b> dari Inbox Setup di Mailtrap.</li>
-                    <li>Layanan ini hanya untuk simulasi; email tidak terkirim ke alamat asli.</li>
-                  </ul>
-                </>
-              )}
-              {smtpSettings.service === "custom" && (
-                <>
-                  <p className="font-semibold mb-1 text-emerald-700 text-sm">Panduan SMTP Hosting Manual:</p>
-                  <ul className="list-disc list-inside space-y-1">
-                    <li>Username: Alamat email lengkap hosting (contoh: <i>admin@domain.com</i>).</li>
-                    <li>Password: Password akun email tersebut (<b>Bukan</b> password database/cPanel).</li>
-                    <li>Host: Biasanya <i>mail.domain.com</i> atau <i>smtp.domain.com</i>.</li>
-                    <li>Port: <b>465</b> (SSL) atau <b>587</b> (TLS).</li>
-                  </ul>
-                </>
-              )}
+          {smtpSettings.service !== "none" && (
+            <div className="p-3 bg-blue-50 text-blue-800 text-xs rounded-md border border-blue-200 flex items-start gap-2 animate-fadeIn">
+              <FaInfoCircle className="flex-shrink-0 mt-0.5 text-blue-500" />
+              <div>
+                {smtpSettings.service === "gmail" && (
+                  <>
+                    <p className="font-semibold mb-1 text-red-600 text-sm">Panduan Gmail (Google):</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li>Username: Alamat email Gmail lengkap Anda.</li>
+                      <li>Password: <b>App Password</b> (16 digit), bukan password email biasa.</li>
+                      <li>Aktifkan Verifikasi 2 Langkah untuk membuat Sandi Aplikasi.</li>
+                      <li>Buat di: <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" className="underline font-medium hover:text-blue-900">Google App Passwords</a></li>
+                    </ul>
+                  </>
+                )}
+                {smtpSettings.service === "brevo" && (
+                  <>
+                    <p className="font-semibold mb-1 text-indigo-700 text-sm">Panduan Brevo (Sendinblue):</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li>Username: Alamat email yang terdaftar di Brevo.</li>
+                      <li>Password: <b>SMTP Key</b> dari Dashboard Brevo (Menu SMTP & API).</li>
+                      <li>Pastikan pengirim sudah diverifikasi di bagian "Sender".</li>
+                    </ul>
+                  </>
+                )}
+                {smtpSettings.service === "mailtrap" && (
+                  <>
+                    <p className="font-semibold mb-1 text-amber-700 text-sm">Panduan Mailtrap (Testing):</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li>Gunakan <b>Username</b> & <b>Password</b> dari Inbox Setup di Mailtrap.</li>
+                      <li>Layanan ini hanya untuk simulasi; email tidak terkirim ke alamat asli.</li>
+                    </ul>
+                  </>
+                )}
+                {smtpSettings.service === "custom" && (
+                  <>
+                    <p className="font-semibold mb-1 text-emerald-700 text-sm">Panduan SMTP Hosting Manual:</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li>Username: Alamat email lengkap hosting (contoh: <i>admin@domain.com</i>).</li>
+                      <li>Password: Password akun email tersebut (<b>Bukan</b> password database/cPanel).</li>
+                      <li>Host: Biasanya <i>mail.domain.com</i> atau <i>smtp.domain.com</i>.</li>
+                      <li>Port: <b>465</b> (SSL) atau <b>587</b> (TLS).</li>
+                    </ul>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* 3. Nama Pengirim */}
           <div>
@@ -240,9 +246,10 @@ const EmailPengirim = ({ onClose }) => {
                   name="host"
                   value={smtpSettings.host}
                   onChange={handleChange}
+                  // Disable jika 'none' atau bukan 'custom'
                   disabled={smtpSettings.service !== "custom"}
                   className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
-                  required
+                  required={smtpSettings.service !== "none"}
                 />
               </div>
             </div>
@@ -259,7 +266,7 @@ const EmailPengirim = ({ onClose }) => {
                   onChange={handleChange}
                   disabled={smtpSettings.service !== "custom"}
                   className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
-                  required
+                  required={smtpSettings.service !== "none"}
                 />
               </div>
             </div>
@@ -274,9 +281,12 @@ const EmailPengirim = ({ onClose }) => {
                   name="auth_user"
                   value={smtpSettings.auth_user}
                   onChange={handleChange}
-                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 transition"
+                  // [PERUBAHAN] Disabled jika service === 'none'
+                  disabled={smtpSettings.service === "none"}
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 transition disabled:bg-gray-100 disabled:cursor-not-allowed"
                   placeholder="admin@domain.com"
-                  required
+                  // [PERUBAHAN] Tidak required jika service === 'none'
+                  required={smtpSettings.service !== "none"}
                 />
               </div>
             </div>
@@ -291,9 +301,12 @@ const EmailPengirim = ({ onClose }) => {
                   name="auth_pass"
                   value={smtpSettings.auth_pass}
                   onChange={handleChange}
-                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 font-mono transition"
+                  // [PERUBAHAN] Disabled jika service === 'none'
+                  disabled={smtpSettings.service === "none"}
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 font-mono transition disabled:bg-gray-100 disabled:cursor-not-allowed"
                   placeholder="••••••••••••"
-                  required
+                  // [PERUBAHAN] Tidak required jika service === 'none'
+                  required={smtpSettings.service !== "none"}
                 />
               </div>
             </div>

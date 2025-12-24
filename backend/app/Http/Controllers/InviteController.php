@@ -22,8 +22,10 @@ class InviteController extends Controller
         $userId = Auth::id();
         $smtp = SmtpSetting::where('user_id', $userId)->first(); 
 
-        if (!$smtp || empty($smtp->auth_user) || empty($smtp->auth_pass)) {
-            // Melempar exception agar bisa ditangkap di sendInvite
+        // [PERUBAHAN] Tambahkan pengecekan service === 'none'
+        // Jika setting tidak ditemukan, ATAU service diset 'none', ATAU kredensial kosong
+        // Maka lempar Exception agar ditangkap sebagai mode "Tanpa Email"
+        if (!$smtp || $smtp->service === 'none' || empty($smtp->auth_user) || empty($smtp->auth_pass)) {
             throw new \Exception("SMTP_NOT_CONFIGURED");
         }
 
@@ -92,7 +94,7 @@ class InviteController extends Controller
             $this->setupMailer(); 
             $canSendEmail = true;
         } catch (\Exception $e) {
-            // Jika SMTP belum diatur, flag pengiriman email dimatikan
+            // Jika SMTP belum diatur (atau mode 'none'), flag pengiriman email dimatikan
             $canSendEmail = false;
         }
 
@@ -119,7 +121,7 @@ class InviteController extends Controller
                     'login_count' => 0
                 ]);
 
-                // 2. Kirim Email HANYA JIKA SMTP terkonfigurasi
+                // 2. Kirim Email HANYA JIKA SMTP terkonfigurasi ($canSendEmail = true)
                 if ($canSendEmail) {
                     $details = [
                         'exam_name' => $exam->keterangan,
@@ -167,7 +169,7 @@ class InviteController extends Controller
         // Tentukan pesan response
         $finalMessage = "Berhasil memproses $successCount undangan.";
         if (!$canSendEmail) {
-            $finalMessage .= " (Data disimpan tanpa kirim email karena SMTP belum dikonfigurasi)";
+            $finalMessage .= " (Data disimpan tanpa kirim email karena SMTP belum dikonfigurasi atau dinonaktifkan)";
         }
 
         if ($successCount === 0 && count($errors) > 0) {
