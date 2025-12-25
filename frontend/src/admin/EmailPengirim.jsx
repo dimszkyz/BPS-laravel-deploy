@@ -15,7 +15,7 @@ import {
   FaCogs
 } from "react-icons/fa";
 
-const API_URL = "http://localhost:8000";
+const API_URL = "https://kompeta.web.bps.go.id";
 
 const EmailPengirim = ({ onClose }) => {
   const [smtpSettings, setSmtpSettings] = useState({

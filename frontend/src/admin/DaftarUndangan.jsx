@@ -16,7 +16,7 @@ import {
   FaFileDownload, 
 } from "react-icons/fa";
 
-const API_URL = "http://localhost:8000";
+const API_URL = "https://kompeta.web.bps.go.id";
 
 const DaftarUndangan = ({ refreshTrigger }) => {
   // --- STATE DATA ---

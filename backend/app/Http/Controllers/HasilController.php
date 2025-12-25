@@ -195,21 +195,25 @@ class HasilController extends Controller
 
         // [LOGIC NODE] Normalisasi response (parsing JSON file & kunci jawaban)
         $normalized = $rows->map(function ($row) {
-            // Parsing File Dokumen
             if ($row->tipe_soal === 'soalDokumen') {
                 $files = [];
                 try {
-                    $decoded = json_decode($row->jawaban_text);
-                    if (is_array($decoded)) {
-                        $files = $decoded;
-                    } else if (!empty($row->jawaban_text)) {
-                        $files = [$row->jawaban_text];
+                    $decoded = json_decode($row->jawaban_text, true);
+                    $rawPaths = is_array($decoded) ? $decoded : (!empty($row->jawaban_text) ? [$row->jawaban_text] : []);
+                    
+                    // Loop untuk membersihkan path dan menambah Full URL
+                    foreach ($rawPaths as $path) {
+                        $cleanPath = ltrim(str_replace('storage/', '', $path), '/');
+                        // Hasil: https://kompeta.web.bps.go.id/storage/uploads_jawaban/xxx.jpg
+                        $files[] = '/storage/' . $cleanPath;
                     }
                 } catch (\Exception $e) {
-                    $files = [$row->jawaban_text];
+                    $files = [];
                 }
+                
                 $row->jawaban_files = $files;
-                $row->jawaban_text = $files[0] ?? null; // Tampilkan file pertama di text
+                // Simpan URL pertama ke jawaban_text agar link bisa diklik di table admin
+                $row->jawaban_text = $files[0] ?? null; 
             }
             
             // Tambahkan Kunci Jawaban (Untuk Admin melihat di Excel)
@@ -283,14 +287,20 @@ class HasilController extends Controller
             if ($row->tipe_soal === 'soalDokumen') {
                 $files = [];
                 try {
-                    $decoded = json_decode($row->jawaban_text);
-                    if (is_array($decoded)) $files = $decoded;
-                    else if (!empty($row->jawaban_text)) $files = [$row->jawaban_text];
+                    $decoded = json_decode($row->jawaban_text, true);
+                    $rawPaths = is_array($decoded) ? $decoded : (!empty($row->jawaban_text) ? [$row->jawaban_text] : []);
+            
+                    foreach ($rawPaths as $path) {
+                        // Hilangkan bug "uploads_jawaban" tanpa slash atau double storage
+                        $cleanPath = ltrim(str_replace('storage/', '', $path), '/');
+                        
+                        // Pastikan menggunakan asset() agar otomatis HTTPS mengikuti AppServiceProvider
+                        $files[] = '/storage/' . $cleanPath;
+                    }
                 } catch (\Exception $e) {}
                 
-                $row->jawaban_files = $files;
+                $row->jawaban_files = $files; // Frontend akan membaca array URL ini
                 
-                // Bersihkan tampilan text agar tidak terlihat raw JSON di UI text biasa
                 if (!empty($files)) {
                     $row->jawaban_text = count($files) . " File terupload"; 
                 }
