@@ -14,10 +14,8 @@ import {
   FaThumbsDown
 } from "react-icons/fa";
 
-// [FIX] Pastikan URL mengarah ke domain hosting (HTTPS)
 const API_URL = "https://kompeta.web.bps.go.id";
 
-// Helper format tanggal (Tidak berubah)
 const formatTanggal = (isoString) => {
   if (!isoString) return "-";
   try {
@@ -35,7 +33,6 @@ const formatTanggal = (isoString) => {
   }
 };
 
-// Helper ambil semua file dokumen dari backend
 const getDokumenFiles = (jawaban) => {
   if (Array.isArray(jawaban.jawaban_files)) {
     return jawaban.jawaban_files.filter(Boolean);
@@ -49,7 +46,6 @@ const getDokumenFiles = (jawaban) => {
       const parsed = JSON.parse(jt);
       if (Array.isArray(parsed)) return parsed.filter(Boolean);
     } catch (_) {
-      // bukan JSON, mungkin single path
     }
     return [jt];
   }
@@ -57,7 +53,6 @@ const getDokumenFiles = (jawaban) => {
   return [];
 };
 
-// Komponen StatCard (Tidak berubah)
 const StatCard = ({ icon, label, value, color }) => (
   <div className={`bg-white p-4 rounded-xl shadow-lg border-l-4 ${color}`}>
     <div className="flex items-center">
@@ -70,9 +65,7 @@ const StatCard = ({ icon, label, value, color }) => (
   </div>
 );
 
-// Komponen Modal (Popup) Detail Soal
 const DetailSoalModal = ({ soal, nomorSoal, onClose }) => {
-  // [FIX] Cek status benar secara ketat (handle string "1", "true", atau angka 1)
   const isBenar = soal.benar == 1 || soal.benar === true || soal.benar === "true";
   
   const jawabanBenarObj = soal.pilihan?.find((p) => p.is_correct);
@@ -88,7 +81,6 @@ const DetailSoalModal = ({ soal, nomorSoal, onClose }) => {
         className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header Modal */}
         <div className="p-5 border-b border-gray-200 flex justify-between items-center">
           <h3 className="text-xl font-semibold text-gray-800">
             Detail Soal #{nomorSoal}
@@ -100,9 +92,7 @@ const DetailSoalModal = ({ soal, nomorSoal, onClose }) => {
             &times;
           </button>
         </div>
-        {/* Body Modal */}
         <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
-          {/* 1. Soal */}
           <div>
             <label className="block text-sm font-semibold text-gray-600 mb-1">
               Soal:
@@ -112,7 +102,6 @@ const DetailSoalModal = ({ soal, nomorSoal, onClose }) => {
             </p>
             <p className="text-xs text-gray-500 mt-1">Bobot Nilai: {soal.bobot || 1}</p>
           </div>
-          {/* 2. Jawaban Peserta */}
           <div>
             <label className="block text-sm font-semibold text-gray-600 mb-1">
               Jawaban Peserta:
@@ -140,7 +129,6 @@ const DetailSoalModal = ({ soal, nomorSoal, onClose }) => {
               </p>
             </div>
           </div>
-          {/* 3. Jawaban Benar */}
           {!isBenar && (
             <div>
               <label className="block text-sm font-semibold text-gray-600 mb-1">
@@ -153,7 +141,6 @@ const DetailSoalModal = ({ soal, nomorSoal, onClose }) => {
               </div>
             </div>
           )}
-          {/* 4. Daftar Pilihan */}
           {soal.tipe_soal === "pilihanGanda" && (
             <div>
               <label className="block text-sm font-semibold text-gray-600 mb-1">
@@ -209,7 +196,6 @@ const DetailSoalModal = ({ soal, nomorSoal, onClose }) => {
             </div>
           )}
         </div>
-        {/* Footer Modal */}
         <div className="p-4 bg-gray-50 border-t border-gray-200 text-right">
           <button
             onClick={onClose}
@@ -223,12 +209,12 @@ const DetailSoalModal = ({ soal, nomorSoal, onClose }) => {
   );
 };
 
-// Komponen HasilAkhir Utama
 const HasilAkhir = () => {
   const { id: pesertaId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
   const targetAdminId = location.state?.targetAdminId;
+  const incomingExamId = location.state?.selectedExamId;
   
   const [peserta, setPeserta] = useState(null);
   const [hasil, setHasil] = useState([]);
@@ -291,9 +277,6 @@ const HasilAkhir = () => {
     fetchDetail();
   }, [pesertaId, targetAdminId]);
 
-  // ==========================
-  // Logic Update Nilai Manual
-  // ==========================
   const updateNilaiManual = async (questionId, isCorrect) => {
     try {
       const token = sessionStorage.getItem("adminToken");
@@ -317,10 +300,8 @@ const HasilAkhir = () => {
 
       if (!res.ok) throw new Error("Gagal update nilai");
 
-      // Update state lokal agar UI berubah langsung
       setHasil((prevHasil) =>
         prevHasil.map((item) =>
-            // [FIX] Update state dengan nilai integer 1 atau 0 agar konsisten
           item.question_id === questionId ? { ...item, benar: isCorrect ? 1 : 0 } : item
         )
       );
@@ -329,40 +310,29 @@ const HasilAkhir = () => {
     }
   };
 
-  // ==========================
-  // Kalkulasi Skor Berbasis Bobot (FIXED)
-  // ==========================
   const pgAnswers = hasil.filter(
     (h) => h.tipe_soal === "pilihanGanda" || h.tipe_soal === "teksSingkat"
   );
   const esayAnswers = hasil.filter((h) => h.tipe_soal === "esai" || h.tipe_soal === "esay");
   const dokumenAnswers = hasil.filter((h) => h.tipe_soal === "soalDokumen");
 
-  // Hitung Total Bobot Maksimal (Jika semua benar)
   const totalBobotMaksimal = hasil.reduce((acc, curr) => {
-      // [FIX] Gunakan Number() untuk mencegah penjumlahan string "1" + "1" = "11"
       return acc + (Number(curr.bobot) || 1);
   }, 0);
   
-  // Hitung Total Bobot yang Diperoleh Peserta (Hanya soal yang benar)
   const totalBobotDiperoleh = hasil.reduce((acc, curr) => {
-    // [FIX] Cek benar secara ketat
     const isBenar = curr.benar == 1 || curr.benar === true || curr.benar === "true";
     return isBenar ? acc + (Number(curr.bobot) || 1) : acc;
   }, 0);
 
-  // Konversi ke Skala 100
   const nilaiAkhir = totalBobotMaksimal > 0 
     ? ((totalBobotDiperoleh / totalBobotMaksimal) * 100).toFixed(1) 
     : 0;
 
-  // Hitung jumlah soal Benar/Salah secara kuantitas
   const jumlahSoal = hasil.length;
-  // [FIX] Filter jumlah benar yang ketat
   const jumlahBenar = hasil.filter(h => h.benar == 1 || h.benar === true || h.benar === "true").length;
   const jumlahSalah = jumlahSoal - jumlahBenar;
 
-  // Handler modal
   const handleBukaModal = (jawaban, nomor) => {
     setSelectedSoal(jawaban);
     setSelectedNomor(nomor);
@@ -374,7 +344,6 @@ const HasilAkhir = () => {
     setSelectedNomor(0);
   };
 
-  // --- RENDER ---
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64 text-gray-500">
@@ -403,7 +372,6 @@ const HasilAkhir = () => {
     <div className="bg-gray-50 min-h-screen flex flex-col">
       <div className="bg-white shadow-sm border-b border-gray-300 py-4 pl-14 pr-4 md:px-8 md:py-5 flex justify-between items-center sticky top-0 z-50 transition-all">
         <h2 className="text-xl md:text-2xl font-semibold text-gray-900 flex items-center gap-2">
-          {/* Ikon hanya tampil di tablet/desktop */}
           <span className="hidden md:inline-flex">
             <FaFileAlt className="text-blue-600 w-5 h-5 md:w-6 md:h-6" />
           </span>
@@ -411,24 +379,22 @@ const HasilAkhir = () => {
         </h2>
         
         <button
-          onClick={() => {
-            if (targetAdminId) {
-              navigate(-1);
-            } else {
-              navigate("/admin/hasil-ujian");
-            }
-          }}
-          className="flex items-center gap-2 px-3 py-1.5 md:px-3 md:py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition text-xs md:text-sm font-medium border border-gray-300 shadow-sm"
-        >
-          <span className="text-lg leading-none">&larr;</span>
-          <span>Kembali</span>
-        </button>
+  onClick={() => {
+    navigate("/admin/hasil-ujian", {
+      state: {
+        previousExamId: incomingExamId, 
+        targetAdminId: targetAdminId
+      }
+    });
+  }}
+  className="flex items-center gap-2 px-3 py-1.5 md:px-3 md:py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition text-xs md:text-sm font-medium border border-gray-300 shadow-sm"
+>
+  <span className="text-lg leading-none">&larr;</span>
+  <span>Kembali</span>
+</button>
       </div>
-      {/* KONTEN */}
       <div className="p-6 md:p-8">
         <div className="p-6 md:p-8 max-w-4xl mx-auto bg-white shadow-xl rounded-xl border border-gray-200">
-          
-          {/* Bagian 0: Ringkasan Skor */}
           <div className="mb-10">
             <h2 className="text-2xl font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-200">
               📊 Ringkasan Skor
@@ -461,7 +427,6 @@ const HasilAkhir = () => {
             </div>
           </div>
 
-          {/* Bagian 1: Data Diri */}
           <div className="mb-10">
             <h2 className="text-2xl font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-200">
               📋 Data Ujian & Peserta
@@ -495,7 +460,6 @@ const HasilAkhir = () => {
             </div>
           </div>
 
-          {/* Bagian 2: Status Jawaban (Auto-Nilai) */}
           <div className="mb-10">
             <h2 className="text-2xl font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-200">
               📝 Soal Pilihan Ganda & Teks Singkat (Auto-Nilai)
@@ -503,7 +467,6 @@ const HasilAkhir = () => {
             <div className="flex flex-wrap gap-2">
               {pgAnswers.length > 0 ? (
                 pgAnswers.map((jawaban, idx) => {
-                    // [FIX] Cek status benar untuk warna tombol
                     const isBenar = jawaban.benar == 1 || jawaban.benar === true || jawaban.benar === "true";
                     return (
                         <button
@@ -529,7 +492,6 @@ const HasilAkhir = () => {
             </div>
           </div>
 
-          {/* Bagian 3: Jawaban Esai */}
           <div className="mb-10">
             <h2 className="text-2xl font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-200">
               ✍️ Jawaban Esai (Penilaian Manual)
@@ -537,7 +499,6 @@ const HasilAkhir = () => {
             <div className="space-y-6">
               {esayAnswers.length > 0 ? (
                 esayAnswers.map((jawaban, idx) => {
-                    // [FIX] Status benar local untuk UI
                     const isBenar = jawaban.benar == 1 || jawaban.benar === true || jawaban.benar === "true";
                     
                     return (
@@ -563,7 +524,6 @@ const HasilAkhir = () => {
                                     </div>
                                 </div>
 
-                                {/* Tombol Nilai Manual */}
                                 <div className="flex flex-col gap-2 min-w-[120px] pt-6">
                                     <p className="text-xs font-semibold text-gray-500 text-center mb-1">Beri Nilai:</p>
                                     <button
@@ -599,7 +559,6 @@ const HasilAkhir = () => {
             </div>
           </div>
 
-          {/* Bagian 4: Jawaban Dokumen */}
           <div>
             <h2 className="text-2xl font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-200">
               📎 Jawaban Dokumen (Penilaian Manual)
@@ -609,7 +568,6 @@ const HasilAkhir = () => {
               {dokumenAnswers.length > 0 ? (
                 dokumenAnswers.map((jawaban, idx) => {
                   const files = getDokumenFiles(jawaban);
-                  // [FIX] Status benar local untuk UI
                   const isBenar = jawaban.benar == 1 || jawaban.benar === true || jawaban.benar === "true";
 
                   return (
@@ -655,7 +613,6 @@ const HasilAkhir = () => {
                               </div>
                           </div>
 
-                          {/* Tombol Nilai Manual */}
                           <div className="flex flex-col gap-2 min-w-[120px] pt-6">
                             <p className="text-xs font-semibold text-gray-500 text-center mb-1">Beri Nilai:</p>
                             <button
@@ -693,7 +650,6 @@ const HasilAkhir = () => {
         </div>
       </div>
 
-      {/* Render Modal */}
       {isModalOpen && (
         <DetailSoalModal
           soal={selectedSoal}
@@ -705,7 +661,6 @@ const HasilAkhir = () => {
   );
 };
 
-// Komponen helper DetailItem
 const DetailItem = ({ label, value, icon }) => (
   <div>
     <span className="block text-xs font-medium text-gray-500">

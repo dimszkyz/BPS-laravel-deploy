@@ -1,6 +1,6 @@
 // File: src/admin/HasilUjian.jsx
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   FaSyncAlt,
   FaPoll,
@@ -19,10 +19,8 @@ import {
 } from "react-icons/fa";
 import * as XLSX from "xlsx";
 
-// [FIX] Pastikan URL mengarah ke domain hosting (HTTPS)
 const API_URL = "https://kompeta.web.bps.go.id";
 
-// ---------- Helpers ----------
 const formatTanggal = (isoString) => {
   if (!isoString) return "-";
   try {
@@ -40,14 +38,13 @@ const formatTanggal = (isoString) => {
   }
 };
 
-// Helper untuk memformat tipe soal agar lebih enak dibaca di Excel
 const formatTipeSoal = (tipe) => {
   switch (tipe) {
     case "pilihanGanda":
       return "Pilihan Ganda";
     case "teksSingkat":
       return "Isian Singkat";
-      case "esai":
+    case "esai":
     case "esay":
       return "Esai";
     case "soalDokumen":
@@ -57,7 +54,6 @@ const formatTipeSoal = (tipe) => {
   }
 };
 
-// ---------- Auth helpers (untuk scope superadmin) ----------
 const decodeJwt = (token) => {
   try {
     const payload = token.split(".")[1];
@@ -89,7 +85,7 @@ const getAdminContext = () => {
           admin.role || admin.level || admin.tipe || admin.user_role || null,
         adminId: admin.id || admin.admin_id || admin.userId || null,
       };
-    } catch {}
+    } catch { }
   }
 
   const token = sessionStorage.getItem("adminToken");
@@ -111,17 +107,14 @@ const getAdminContext = () => {
   };
 };
 
-// [LOGIC UTAMA DIPERBAIKI DISINI]
 const groupDataByUjianThenPeserta = (data) => {
   const groupedByExam = data.reduce((acc, row) => {
     const examId = row.exam_id ?? "unknown";
     const pesertaId = row.peserta_id;
-    
-    // [FIX 1] Paksa bobot jadi Number agar tidak jadi string "01"
-    const bobotSoal = Number(row.bobot) || 1; 
+
+    const bobotSoal = Number(row.bobot) || 1;
     const questionId = row.question_id;
 
-    // [FIX 2] Cek status benar secara ketat (String "0" atau "1")
     const isBenar = row.benar == 1 || row.benar === true || row.benar === "true";
 
     if (!acc[examId]) {
@@ -141,7 +134,7 @@ const groupDataByUjianThenPeserta = (data) => {
         total_pg: 0,
         total_bobot_maksimal: 0,
         total_bobot_diperoleh: 0,
-        total_soal_count: 0, 
+        total_soal_count: 0,
         total_benar_count: 0,
         tipe_soal_set: new Set(),
         processed_questions: new Set(),
@@ -149,9 +142,8 @@ const groupDataByUjianThenPeserta = (data) => {
       };
     }
 
-    // Cek Duplikasi Soal
     if (acc[examId].peserta_map[pesertaId].processed_questions.has(questionId)) {
-        return acc;
+      return acc;
     }
     acc[examId].peserta_map[pesertaId].processed_questions.add(questionId);
 
@@ -161,19 +153,15 @@ const groupDataByUjianThenPeserta = (data) => {
 
     if (row.tipe_soal === "pilihanGanda" || row.tipe_soal === "teksSingkat") {
       acc[examId].peserta_map[pesertaId].total_pg += 1;
-      // [FIX] Gunakan variabel isBenar
       if (isBenar) {
         acc[examId].peserta_map[pesertaId].pg_benar += 1;
       }
     }
-    
-    // Hitung Bobot (Matematika Number)
+
     acc[examId].peserta_map[pesertaId].total_bobot_maksimal += bobotSoal;
     if (isBenar) {
       acc[examId].peserta_map[pesertaId].total_bobot_diperoleh += bobotSoal;
     }
-
-    // Hitung Kuantitas Soal
     acc[examId].peserta_map[pesertaId].total_soal_count += 1;
     if (isBenar) {
       acc[examId].peserta_map[pesertaId].total_benar_count += 1;
@@ -189,19 +177,19 @@ const groupDataByUjianThenPeserta = (data) => {
         const nilaiAkhirBobot =
           peserta.total_bobot_maksimal > 0
             ? Number(
-                (
-                  (peserta.total_bobot_diperoleh /
-                    peserta.total_bobot_maksimal) *
-                  100
-                ).toFixed(1)
-              )
+              (
+                (peserta.total_bobot_diperoleh /
+                  peserta.total_bobot_maksimal) *
+                100
+              ).toFixed(1)
+            )
             : 0;
-            
+
         const skorPgLama =
           peserta.total_pg > 0
             ? Number(((peserta.pg_benar / peserta.total_pg) * 100).toFixed(0))
             : 0;
-        
+
         const listTipeSoal = Array.from(peserta.tipe_soal_set)
           .map(t => formatTipeSoal(t))
           .join(", ");
@@ -210,7 +198,7 @@ const groupDataByUjianThenPeserta = (data) => {
 
         return {
           ...cleanPeserta,
-          skor_pg: skorPgLama, 
+          skor_pg: skorPgLama,
           nilai_akhir_bobot: nilaiAkhirBobot,
           tipe_soal_string: listTipeSoal,
         };
@@ -227,7 +215,6 @@ const groupDataByUjianThenPeserta = (data) => {
 const sanitizeSheetName = (name) =>
   (name || "Sheet").toString().replace(/[\\/*?[\]]/g, "").substring(0, 31);
 
-// Export Excel: Menambahkan kolom Tipe Soal
 const prepareDataForExport = (pesertaList) =>
   pesertaList.map((p) => ({
     "Nama Peserta": p.nama,
@@ -251,13 +238,10 @@ const barColor = (v) => {
   return "bg-red-500";
 };
 
-// ---------- helper export baru ----------
 const statusJawabanExport = (row) => {
-  // Jika tipe soal manual, beri label manual
   if (row.tipe_soal === "esai" || row.tipe_soal === "esay" || row.tipe_soal === "soalDokumen")
     return "Manual / Belum Dinilai";
-  
-  // [FIX] Cek benar secara ketat untuk export Excel
+
   const isBenar = row.benar == 1 || row.benar === true || row.benar === "true";
   return isBenar ? "Benar" : "Salah";
 };
@@ -285,6 +269,12 @@ const HasilUjian = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
+  useEffect(() => {
+    if (selectedExamId) {
+      sessionStorage.setItem("lastSelectedExamId", String(selectedExamId));
+    }
+  }, [selectedExamId]);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -295,8 +285,8 @@ const HasilUjian = () => {
       const url =
         isSuperAdmin && adminId
           ? `${API_URL}/api/hasil?target_admin_id=${encodeURIComponent(
-              adminId
-            )}`
+            adminId
+          )}`
           : `${API_URL}/api/hasil`;
 
       const res = await fetch(url, {
@@ -328,11 +318,29 @@ const HasilUjian = () => {
   }, [fetchData]);
 
   useEffect(() => {
-    if (!selectedExamId && Object.keys(groupedHasil).length > 0) {
-      const firstExamId = Object.keys(groupedHasil)[0];
-      setSelectedExamId(firstExamId);
+    const keys = Object.keys(groupedHasil);
+    
+    if (keys.length === 0) return;
+    let targetId = null;
+    if (location.state?.previousExamId) {
+      targetId = String(location.state.previousExamId);
+    } 
+    else {
+      const storedId = sessionStorage.getItem("lastSelectedExamId");
+      if (storedId) targetId = String(storedId);
     }
-  }, [groupedHasil, selectedExamId]);
+    if (targetId && groupedHasil[targetId]) {
+      if (String(selectedExamId) !== targetId) {
+        console.log("Mengembalikan posisi ke ujian:", targetId); 
+        setSelectedExamId(targetId);
+      }
+    } 
+    else if (!selectedExamId) {
+      console.log("Set default ke ujian pertama:", keys[0]);
+      setSelectedExamId(keys[0]);
+    }
+    
+  }, [groupedHasil, location.state, selectedExamId]);
 
   const handleCopy = (text) => {
     navigator.clipboard.writeText(text).catch((err) => {
@@ -354,7 +362,6 @@ const HasilUjian = () => {
     return `https://wa.me/${formattedNohp}`;
   };
 
-  // ---------- Export ----------
   const handleExportAll = () => {
     setLoading(true);
     try {
@@ -363,7 +370,6 @@ const HasilUjian = () => {
       Object.entries(groupedHasil).forEach(([examId, groupData]) => {
         const summaryData = prepareDataForExport(groupData.list_peserta);
         const wsSummary = XLSX.utils.json_to_sheet(summaryData);
-        // Sesuaikan lebar kolom untuk "Tipe Soal"
         wsSummary["!cols"] = [
           { wch: 30 }, // Nama
           { wch: 20 }, // NoHP
@@ -380,33 +386,58 @@ const HasilUjian = () => {
 
         const numericExamId = parseInt(examId, 10);
         const detailData = rawData.filter(
-          (row) => row.exam_id === numericExamId
+          (row) => Number(row.exam_id) === numericExamId
         );
         if (detailData.length > 0) {
-          const detailToExport = detailData.map((row) => ({
-            "Nama Peserta": row.nama,
-            "Nomor HP": row.nohp,
-            Email: row.email,
-            "Waktu Submit": formatTanggal(row.created_at),
-            "Teks Soal": row.soal_text,
-            "Tipe Soal": formatTipeSoal(row.tipe_soal),
-            "Bobot Soal": row.bobot || 1, 
-            "Jawaban Peserta": jawabanExportText(row),
-            "Status Jawaban": statusJawabanExport(row),
-            "Kunci Jawaban": row.kunci_jawaban_text || "-",
-          }));
+          const questions = [...new Map(
+            detailData.map(row => [
+              row.question_id,
+              {
+                question_id: row.question_id,
+                soal: row.soal_text
+              }
+            ])
+          ).values()];
+
+          questions.sort((a, b) => a.question_id - b.question_id);
+
+          const pesertaMap = {};
+
+          detailData.forEach(row => {
+            const pid = row.peserta_id;
+
+            if (!pesertaMap[pid]) {
+              pesertaMap[pid] = {
+                "Nama Peserta": row.nama,
+                "Nomor HP": row.nohp,
+                Email: row.email,
+                "Waktu Submit": formatTanggal(row.created_at),
+              };
+            }
+
+            const qIndex = questions.findIndex(
+              q => q.question_id === row.question_id
+            );
+
+            const headerSoal = `Soal ${qIndex + 1}: ${questions[qIndex].soal}`;
+            pesertaMap[pid][headerSoal] = jawabanExportText(row);
+          });
+
+          const detailToExport = Object.values(pesertaMap).map(row => {
+            questions.forEach((q, i) => {
+              const header = `Soal ${i + 1}: ${q.soal}`;
+              if (!(header in row)) row[header] = "";
+            });
+            return row;
+          });
+
           const wsDetail = XLSX.utils.json_to_sheet(detailToExport);
           wsDetail["!cols"] = [
-            { wch: 30 },
-            { wch: 20 },
-            { wch: 30 },
-            { wch: 20 },
-            { wch: 50 },
-            { wch: 15 },
-            { wch: 10 }, // Bobot
-            { wch: 40 },
-            { wch: 18 },
-            { wch: 30 },
+            { wch: 30 }, // Nama
+            { wch: 18 }, // HP
+            { wch: 30 }, // Email
+            { wch: 20 }, // Submit
+            ...questions.map(() => ({ wch: 50 }))
           ];
           const detailSheetName = sanitizeSheetName(
             `D - ${groupData.keterangan?.substring(0, 20) || "Ujian"} (ID ${examId})`
@@ -429,7 +460,6 @@ const HasilUjian = () => {
       const wb = XLSX.utils.book_new();
       const safeFileName = sanitizeSheetName(groupData.keterangan || "Ujian");
 
-      // --- Sheet 1: Ringkasan ---
       const summaryData = prepareDataForExport(groupData.list_peserta);
       const wsSummary = XLSX.utils.json_to_sheet(summaryData);
       wsSummary["!cols"] = [
@@ -443,10 +473,9 @@ const HasilUjian = () => {
       ];
       XLSX.utils.book_append_sheet(wb, wsSummary, "Ringkasan");
 
-      // --- Sheet 2: Detail Jawaban ---
       const numericExamId = parseInt(examId, 10);
       const detailData = rawData.filter(
-        (row) => row.exam_id === numericExamId
+        (row) => Number(row.exam_id) === numericExamId
       );
 
       if (detailData.length === 0) {
@@ -454,30 +483,54 @@ const HasilUjian = () => {
         return;
       }
 
-      const detailToExport = detailData.map((row) => ({
-        "Nama Peserta": row.nama,
-        "Nomor HP": row.nohp,
-        Email: row.email,
-        "Waktu Submit": formatTanggal(row.created_at),
-        "Teks Soal": row.soal_text,
-        "Tipe Soal": formatTipeSoal(row.tipe_soal),
-        "Bobot Soal": row.bobot || 1, 
-        "Jawaban Peserta": jawabanExportText(row),
-        "Status Jawaban": statusJawabanExport(row),
-        "Kunci Jawaban": row.kunci_jawaban_text || "-",
-      }));
+      const questions = [...new Map(
+        detailData.map(row => [
+          row.question_id,
+          {
+            question_id: row.question_id,
+            soal: row.soal_text
+          }
+        ])
+      ).values()];
+      questions.sort((a, b) => a.question_id - b.question_id);
+
+      const pesertaMap = {};
+
+      detailData.forEach(row => {
+        const pid = row.peserta_id;
+
+        if (!pesertaMap[pid]) {
+          pesertaMap[pid] = {
+            "Nama Peserta": row.nama,
+            "Nomor HP": row.nohp,
+            Email: row.email,
+            "Waktu Submit": formatTanggal(row.created_at),
+          };
+        }
+
+        const qIndex = questions.findIndex(
+          q => q.question_id === row.question_id
+        );
+
+        const headerSoal = `Soal ${qIndex + 1}: ${questions[qIndex].soal}`;
+        pesertaMap[pid][headerSoal] = jawabanExportText(row);
+      });
+
+      const detailToExport = Object.values(pesertaMap).map(row => {
+        questions.forEach((q, i) => {
+          const header = `Soal ${i + 1}: ${q.soal}`;
+          if (!(header in row)) row[header] = "";
+        });
+        return row;
+      });
+
       const wsDetail = XLSX.utils.json_to_sheet(detailToExport);
       wsDetail["!cols"] = [
-        { wch: 30 },
-        { wch: 20 },
-        { wch: 30 },
-        { wch: 20 },
-        { wch: 50 }, // Soal
-        { wch: 15 }, // Tipe
-        { wch: 10 }, // Bobot
-        { wch: 40 }, // Jawaban
-        { wch: 18 }, // Status
-        { wch: 30 }, // Kunci
+        { wch: 30 }, 
+        { wch: 18 }, 
+        { wch: 30 },  
+        { wch: 20 }, 
+        ...questions.map(() => ({ wch: 50 }))
       ];
       XLSX.utils.book_append_sheet(wb, wsDetail, "Detail Jawaban");
 
@@ -488,10 +541,8 @@ const HasilUjian = () => {
     }
   };
 
-  // ---------- Derived ----------
   const selectedGroup = selectedExamId ? groupedHasil[selectedExamId] : null;
 
-  // STATS: Menggunakan nilai_akhir_bobot
   const stats = useMemo(() => {
     if (!selectedGroup) return { count: 0, avg: 0, lastSubmit: "-" };
     const list = selectedGroup.list_peserta || [];
@@ -499,8 +550,8 @@ const HasilUjian = () => {
     const avg =
       count > 0
         ? Math.round(
-            list.reduce((a, b) => a + Number(b.nilai_akhir_bobot || 0), 0) / count
-          )
+          list.reduce((a, b) => a + Number(b.nilai_akhir_bobot || 0), 0) / count
+        )
         : 0;
     const last = list[0]?.submitted_at
       ? formatTanggal(list[0].submitted_at)
@@ -530,10 +581,8 @@ const HasilUjian = () => {
         case "nama":
           return a.nama?.localeCompare(b.nama || "") * dir;
         case "skor_pg":
-          // Sort berdasarkan nilai akhir (persen)
           return (Number(a.nilai_akhir_bobot) - Number(b.nilai_akhir_bobot)) * dir;
         case "pg_benar":
-          // UPDATE: Sort berdasarkan jumlah soal benar (kuantitas)
           return (Number(a.total_benar_count) - Number(b.total_benar_count)) * dir;
         case "submitted_at":
         default:
@@ -573,7 +622,6 @@ const HasilUjian = () => {
     );
   };
 
-  // ---------- UI ----------
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64 text-gray-500">
@@ -596,7 +644,6 @@ const HasilUjian = () => {
       {/* HEADER */}
       <div className="bg-white shadow-sm border-b border-gray-300 py-4 pl-14 pr-4 md:px-8 md:py-5 flex flex-col md:flex-row md:items-center md:justify-between gap-3 sticky top-0 z-50 transition-all">
         <div className="flex items-center gap-3">
-          {/* ICON: HANYA TAMPIL DI DESKTOP */}
           <div className="hidden md:flex p-2 rounded-lg bg-blue-50 text-blue-600">
             <FaPoll />
           </div>
@@ -604,14 +651,12 @@ const HasilUjian = () => {
             <h2 className="text-xl md:text-2xl font-semibold text-gray-900">
               Rekap Hasil Ujian
             </h2>
-            {/* DESKRIPSI: HANYA TAMPIL DI DESKTOP */}
             <p className="hidden md:block text-sm text-gray-500">
               Lihat ringkasan nilai peserta dan ekspor data ke Excel.
             </p>
           </div>
         </div>
 
-        {/* TOMBOL NAVBAR: HANYA TAMPIL DI TABLET/DESKTOP (sm ke atas) */}
         <div className="hidden sm:flex items-center gap-2 self-end md:self-auto">
           <button
             onClick={handleExportAll}
@@ -630,11 +675,9 @@ const HasilUjian = () => {
         </div>
       </div>
 
-      {/* FILTER BAR */}
       <div className="p-4 md:p-6 md:pt-4">
         <div className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 shadow-sm">
           <div className="flex flex-col lg:flex-row lg:items-end gap-4">
-            {/* Dropdown Ujian */}
             <div className="flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Pilih Ujian
@@ -652,7 +695,6 @@ const HasilUjian = () => {
               </select>
             </div>
 
-            {/* Search */}
             <div className="flex-[2]">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Cari Peserta
@@ -668,11 +710,7 @@ const HasilUjian = () => {
               </div>
             </div>
 
-            {/* ACTION BUTTONS CONTAINER */}
             <div className="flex gap-2 w-full lg:w-auto mt-2 lg:mt-0">
-              
-              {/* TOMBOL EXPORT SEMUA (KHUSUS MOBILE) */}
-              {/* Ini muncul di sebelah kiri Export Ujian Ini pada tampilan mobile */}
               <button
                 onClick={handleExportAll}
                 className="sm:hidden flex-1 h-[42px] flex items-center justify-center gap-2 px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition text-sm"
@@ -680,7 +718,6 @@ const HasilUjian = () => {
                 <FaFileExcel /> Semua
               </button>
 
-              {/* TOMBOL EXPORT UJIAN INI */}
               {selectedGroup && (
                 <button
                   onClick={() =>
@@ -695,7 +732,6 @@ const HasilUjian = () => {
             </div>
           </div>
 
-          {/* Stats */}
           {selectedGroup && (
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="p-3 rounded-lg border bg-gray-50">
@@ -735,11 +771,9 @@ const HasilUjian = () => {
         </div>
       </div>
 
-      {/* TABLE CARD */}
       {selectedGroup ? (
         <div className="px-4 md:px-6 pb-8">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-            {/* Table controls */}
             <div className="px-4 md:px-5 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-b">
               <div className="text-sm text-gray-600 flex items-center gap-2">
                 <FaInfoCircle className="text-gray-400" />
@@ -765,7 +799,6 @@ const HasilUjian = () => {
               </div>
             </div>
 
-            {/* Table */}
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm text-left border-collapse">
                 <thead className="bg-gray-50 text-gray-700 uppercase text-xs sticky top-[var(--table-sticky,0)]">
@@ -891,6 +924,7 @@ const HasilUjian = () => {
                       <td className="py-3 px-5 text-center">
                         <Link
                           to={`/admin/hasil/${peserta.peserta_id}`}
+                          state={{ selectedExamId: selectedExamId }}
                           className="inline-flex items-center justify-center w-8 h-8 rounded-md text-blue-600 hover:bg-blue-50 hover:text-blue-800"
                           title="Lihat detail jawaban"
                         >
@@ -914,7 +948,6 @@ const HasilUjian = () => {
               </table>
             </div>
 
-            {/* Pagination */}
             <div className="px-4 md:px-5 py-3 border-t flex flex-col sm:flex-row items-center justify-between gap-3">
               <div className="text-sm text-gray-600 text-center sm:text-left">
                 Halaman{" "}
