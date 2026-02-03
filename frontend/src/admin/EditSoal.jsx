@@ -618,7 +618,7 @@ const EditSoal = () => {
               </div>
 
               <div className="relative">
-                <label className={labelClass}>Jam Mulai (Akses Dibuka)</label>
+                <label className={labelClass}>Jam Mulai WIB (Akses Dibuka)</label>
                 <div className="absolute inset-y-0 left-3 flex items-center pt-6 z-10">
                   <FaClock className="text-gray-400" />
                 </div>
@@ -633,7 +633,7 @@ const EditSoal = () => {
 
               <div className="relative">
                 <label className={labelClass}>
-                  Jam Berakhir (Akses Ditutup)
+                  Jam Berakhir WIB (Akses Ditutup)
                 </label>
                 <div className="absolute inset-y-0 left-3 flex items-center pt-6 z-10">
                   <FaClock className="text-gray-400" />

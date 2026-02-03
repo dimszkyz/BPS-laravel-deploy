@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Auth; 
 use Illuminate\Support\Str;
+use Carbon\Carbon; // [BARU] Import Carbon untuk manipulasi waktu
 
 class InviteController extends Controller
 {
@@ -22,9 +23,6 @@ class InviteController extends Controller
         $userId = Auth::id();
         $smtp = SmtpSetting::where('user_id', $userId)->first(); 
 
-        // [PERUBAHAN] Tambahkan pengecekan service === 'none'
-        // Jika setting tidak ditemukan, ATAU service diset 'none', ATAU kredensial kosong
-        // Maka lempar Exception agar ditangkap sebagai mode "Tanpa Email"
         if (!$smtp || $smtp->service === 'none' || empty($smtp->auth_user) || empty($smtp->auth_pass)) {
             throw new \Exception("SMTP_NOT_CONFIGURED");
         }
@@ -187,6 +185,7 @@ class InviteController extends Controller
 
     /**
      * POST /api/invite/login
+     * [DIPERBAIKI] Cek waktu ujian sebelum menambah login_count
      */
     public function login(Request $request)
     {
@@ -195,7 +194,8 @@ class InviteController extends Controller
             'login_code' => 'required'
         ]);
 
-        $invitation = Invitation::where('email', $request->email)
+        // Load undangan beserta data ujiannya
+        $invitation = Invitation::with('exam')->where('email', $request->email)
             ->where('login_code', trim($request->login_code))
             ->first();
 
@@ -203,10 +203,33 @@ class InviteController extends Controller
             return response()->json(['message' => 'Kredensial tidak cocok. Cek Email & Kode Login.'], 404);
         }
 
+        // --- [LOGIKA BARU] Cek Waktu Ujian ---
+        if ($invitation->exam) {
+            $exam = $invitation->exam;
+            
+            // Set timezone ke WIB (Asia/Jakarta)
+            $now = Carbon::now('Asia/Jakarta');
+            
+            // Parse waktu selesai dari DB
+            $endDateTime = Carbon::parse($exam->tanggal_berakhir . ' ' . $exam->jam_berakhir, 'Asia/Jakarta');
+
+            if ($now->greaterThan($endDateTime)) {
+                // Jika waktu sudah habis, KIRIM ERROR KHUSUS 'EXAM_EXPIRED'
+                // PENTING: Jangan increment login_count di sini!
+                return response()->json([
+                    'message' => 'Waktu ujian telah berakhir.',
+                    'code' => 'EXAM_EXPIRED', // Flag untuk frontend
+                    'data' => $exam // Kirim data agar popup bisa menampilkan nama & waktu
+                ], 403);
+            }
+        }
+
+        // Cek kuota login
         if ($invitation->login_count >= $invitation->max_logins) {
             return response()->json(['message' => "Kuota login habis ({$invitation->max_logins}x)."], 403);
         }
 
+        // Jika waktu aman & kuota ada, baru catat login
         $invitation->increment('login_count');
 
         return response()->json([

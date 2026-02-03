@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaEnvelope, FaKey, FaSignInAlt, FaSpinner } from "react-icons/fa";
+import { 
+  FaEnvelope, 
+  FaKey, 
+  FaSignInAlt, 
+  FaSpinner, 
+  FaTimes, 
+  FaCalendarTimes, 
+  FaClock 
+} from "react-icons/fa";
 
 const API_URL = "https://kompeta.web.bps.go.id";
 const defaultBgPeserta = "bg-gray-50";
@@ -15,39 +23,89 @@ const LoginPeserta = () => {
   const [bgUrl, setBgUrl] = useState("");
   const [bgLoading, setBgLoading] = useState(true);
 
-  // --- LOGIKA AUTO-REDIRECT (BARU) ---
-  useEffect(() => {
-    // 1. Cek apakah ada data login tersimpan
-    const loginDataStr = localStorage.getItem("loginPeserta");
-    const pesertaDataStr = localStorage.getItem("pesertaData");
+  // State untuk Modal & Data Ujian Berakhir
+  const [showExpiredModal, setShowExpiredModal] = useState(false);
+  const [expiredDetails, setExpiredDetails] = useState(null);
 
-    if (loginDataStr) {
-      try {
-        const loginData = JSON.parse(loginDataStr);
-        
-        // Jika data login valid dan punya ID Ujian
-        if (loginData && loginData.examId) {
-          
-          // 2. Cek Level Akses
-          if (pesertaDataStr) {
-            // Level 2: Sudah Login + Sudah Isi Data Diri -> Langsung ke Ujian
-            console.log("Sesi ditemukan, mengarahkan kembali ke ujian...");
-            navigate(`/ujian/${loginData.examId}`, { replace: true });
-          } else {
-            // Level 1: Sudah Login tapi Belum Isi Data -> Ke Form Data Diri
-            console.log("Sesi login ditemukan, mengarahkan ke pengisian data...");
-            navigate("/peserta", { replace: true });
-          }
-        }
-      } catch (e) {
-        // Jika JSON error, hapus storage agar bersih
-        console.error("Data storage korup, mereset sesi.", e);
-        localStorage.removeItem("loginPeserta");
-        localStorage.removeItem("pesertaData");
-      }
+  // Helper: Format Tanggal Indonesia
+  const formatIndoDate = (dateStr) => {
+    if (!dateStr) return "-";
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString("id-ID", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+    } catch (e) {
+      return dateStr;
     }
+  };
+
+  // --- LOGIKA AUTO-REDIRECT ---
+  useEffect(() => {
+    const checkSession = async () => {
+      const loginDataStr = localStorage.getItem("loginPeserta");
+      const pesertaDataStr = localStorage.getItem("pesertaData");
+
+      if (loginDataStr) {
+        try {
+          const loginData = JSON.parse(loginDataStr);
+
+          if (loginData && loginData.examId) {
+            
+            // --- VALIDASI WAKTU (Auto-Check saat refresh) ---
+            try {
+               const resCheck = await fetch(`${API_URL}/api/ujian/public/${loginData.examId}`);
+               if (resCheck.ok) {
+                 const jsonCheck = await resCheck.json();
+                 const exam = jsonCheck.data || jsonCheck;
+                 
+                 if (exam) {
+                    const strTanggal = exam.tanggal_berakhir || exam.tanggal; 
+                    const strJam = exam.jam_berakhir;
+
+                    const examEndString = `${strTanggal}T${strJam}`;
+                    const examEndTime = new Date(examEndString).getTime();
+                    const now = new Date().getTime();
+                    
+                    if (now > examEndTime) {
+                       // Jika expired saat user me-refresh halaman login
+                       setExpiredDetails({
+                         nama: exam.keterangan,
+                         tgl: strTanggal,
+                         jam: strJam
+                       });
+
+                       localStorage.clear();
+                       setShowExpiredModal(true);
+                       return; 
+                    }
+                 }
+               }
+            } catch (errCheck) {
+               console.error("Auto-check failed:", errCheck);
+            }
+            // ------------------------------------------------
+
+            if (pesertaDataStr) {
+              console.log("Sesi ditemukan, mengarahkan kembali ke ujian...");
+              navigate(`/ujian/${loginData.examId}`, { replace: true });
+            } else {
+              console.log("Sesi login ditemukan, mengarahkan ke pengisian data...");
+              navigate("/peserta", { replace: true });
+            }
+          }
+        } catch (e) {
+          console.error("Data storage korup, mereset sesi.", e);
+          localStorage.clear();
+        }
+      }
+    };
+    
+    checkSession();
   }, [navigate]);
-  // --- SELESAI LOGIKA BARU ---
+  // --- SELESAI LOGIKA AUTO-REDIRECT ---
 
   useEffect(() => {
     const fetchBgSetting = async () => {
@@ -66,25 +124,20 @@ const LoginPeserta = () => {
     fetchBgSetting();
   }, []);
 
-  const validate = () => {
-    if (!email.trim() || !loginCode.trim()) {
-      setErrMsg("Email dan Kode Login wajib diisi.");
-      return false;
-    }
-    const okEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-    if (!okEmail) {
-      setErrMsg("Format email tidak valid.");
-      return false;
-    }
-    return true;
-  };
-
   const handleLogin = async (e) => {
     e.preventDefault();
     setErrMsg("");
-    if (!validate()) return;
+    setShowExpiredModal(false);
+
+    if (!email.trim() || !loginCode.trim()) {
+        setErrMsg("Email dan Kode Login wajib diisi.");
+        return;
+    }
+
     setLoading(true);
+
     try {
+      // 1. REQUEST LOGIN KE API
       const res = await fetch(`${API_URL}/api/invite/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -94,15 +147,29 @@ const LoginPeserta = () => {
         }),
       });
 
-     const data = await res.json();
+      const data = await res.json();
 
+      // 2. TANGKAP ERROR DARI BACKEND
       if (!res.ok) {
-        throw new Error(data.message || "Gagal login.");
+         // Cek apakah error karena Waktu Habis (Code: EXAM_EXPIRED)
+         if (data.code === 'EXAM_EXPIRED' && data.data) {
+             setExpiredDetails({
+                nama: data.data.keterangan,
+                tgl: data.data.tanggal_berakhir,
+                jam: data.data.jam_berakhir
+             });
+             setLoading(false);
+             setShowExpiredModal(true);
+             localStorage.clear(); // Hapus sisa data jika ada
+             return; 
+         }
+         
+         // Error lain (salah password, kuota habis, dll)
+         throw new Error(data.message || "Gagal login.");
       }
 
-      // Reset data lama jika login baru dilakukan manual
-      localStorage.removeItem("pesertaData");
-
+      // 3. JIKA SUKSES (Waktu aman & Login valid)
+      localStorage.removeItem("pesertaData"); 
       localStorage.setItem(
         "loginPeserta",
         JSON.stringify({
@@ -113,6 +180,7 @@ const LoginPeserta = () => {
       );
 
       navigate("/peserta");
+
     } catch (err) {
       console.error(err);
       setErrMsg(err.message || "Terjadi kesalahan saat login.");
@@ -125,19 +193,14 @@ const LoginPeserta = () => {
 
   if (bgLoading) {
     return (
-      <div
-        className={`flex-1 ${defaultBgPeserta} flex items-center justify-center`}
-      >
+      <div className={`flex-1 ${defaultBgPeserta} flex items-center justify-center`}>
         <FaSpinner className="animate-spin text-4xl text-blue-600" />
       </div>
     );
   }
 
   return (
-    <div
-      className={`flex-1 flex items-center justify-center px-4 ${bgClass}`}
-      style={bgStyle}
-    >
+    <div className={`flex-1 flex items-center justify-center px-4 ${bgClass}`} style={bgStyle}>
       <div className="w-full max-w-md bg-white shadow-xl rounded-2xl border border-gray-200 p-7">
         <h1 className="text-xl font-bold text-gray-900 mb-1">Login Peserta</h1>
         <p className="text-sm text-gray-500 mb-6">
@@ -151,11 +214,8 @@ const LoginPeserta = () => {
         )}
 
         <form onSubmit={handleLogin} className="space-y-4">
-          {/* Email */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <div className="relative">
               <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
                 <FaEnvelope />
@@ -172,11 +232,8 @@ const LoginPeserta = () => {
             </div>
           </div>
 
-          {/* Kode Login */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Kode Login
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Kode Login</label>
             <div className="relative">
               <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
                 <FaKey />
@@ -195,22 +252,14 @@ const LoginPeserta = () => {
             </p>
           </div>
 
-          {/* Tombol Login */}
           <button
             type="submit"
             disabled={loading}
-            className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-white font-semibold shadow
-             ${
-               loading
-                 ? "bg-gray-400 cursor-not-allowed"
-                 : "bg-blue-600 hover:bg-blue-700"
+            className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-white font-semibold shadow ${
+               loading ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
              }`}
           >
-            {loading ? (
-              <FaSpinner className="animate-spin" />
-            ) : (
-              <FaSignInAlt />
-            )}
+            {loading ? <FaSpinner className="animate-spin" /> : <FaSignInAlt />}
             {loading ? "Memverifikasi..." : "Login"}
           </button>
         </form>
@@ -219,6 +268,66 @@ const LoginPeserta = () => {
           Lupa Kode Login? Hubungi admin untuk mengirim ulang undangan.
         </div>
       </div>
+
+      {/* --- POPUP UJIAN BERAKHIR --- */}
+      {showExpiredModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform scale-100 animate-fade-in-up">
+              
+              {/* Header Merah */}
+              <div className="bg-red-50 p-6 flex flex-col items-center justify-center border-b border-red-100">
+                  <div className="h-16 w-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mb-3 ring-4 ring-red-50">
+                      <FaCalendarTimes className="text-3xl" />
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900 text-center">
+                      Ujian Telah Berakhir
+                  </h3>
+              </div>
+
+              {/* Body Content */}
+              <div className="p-6">
+                <p className="text-gray-600 text-sm text-center mb-6 leading-relaxed">
+                  Mohon maaf, sesi ujian ini telah ditutup karena waktu pengerjaan sudah habis.
+                </p>
+                
+                {/* Detail Box */}
+                {expiredDetails && (
+                  <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 space-y-3">
+                    <div>
+                      <span className="text-xs text-gray-500 uppercase font-semibold tracking-wider">Nama Ujian</span>
+                      <p className="text-gray-900 font-medium text-sm mt-0.5 line-clamp-2">
+                        {expiredDetails.nama || "-"}
+                      </p>
+                    </div>
+                    <div className="flex items-start gap-3 pt-2 border-t border-gray-200">
+                       <FaClock className="text-gray-400 mt-0.5 shrink-0" />
+                       <div>
+                          <span className="text-xs text-gray-500 block">Waktu Selesai</span>
+                          <span className="text-sm font-semibold text-red-600 block">
+                             {formatIndoDate(expiredDetails.tgl)} • {expiredDetails.jam} WIB
+                          </span>
+                       </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Button */}
+              <div className="p-4 bg-gray-50 border-t border-gray-100">
+                <button
+                    onClick={() => {
+                      setShowExpiredModal(false);
+                      setLoginCode(""); 
+                      localStorage.clear();
+                    }}
+                    className="w-full inline-flex justify-center items-center gap-2 rounded-xl border border-transparent shadow-sm px-4 py-3 bg-gray-900 text-sm font-bold text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-900 transition-all"
+                >
+                    <FaTimes /> Tutup Pemberitahuan
+                </button>
+              </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 };

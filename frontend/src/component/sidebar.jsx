@@ -1,6 +1,6 @@
 // File: src/component/sidebar.jsx
 import React, { useState, useEffect } from "react";
-import { NavLink, useNavigate } from "react-router-dom"; // Tambah useNavigate
+import { NavLink, useNavigate } from "react-router-dom";
 import {
   FaClipboardList,
   FaEdit,
@@ -17,12 +17,14 @@ import {
   FaTimes,
 } from "react-icons/fa";
 
-// HAPUS INI: import { jwtDecode } from "jwt-decode"; 
-
 const API_URL = "https://kompeta.web.bps.go.id";
 
 const Sidebar = () => {
-  const navigate = useNavigate(); // Gunakan hook navigasi
+  const navigate = useNavigate();
+  
+  // --- STATE BARU UNTUK LOGO ---
+  const [logoUrl, setLogoUrl] = useState(null); 
+  
   const [hasNewResult, setHasNewResult] = useState(false);
   const [adminData, setAdminData] = useState({
     username: "",
@@ -33,9 +35,9 @@ const Sidebar = () => {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // --- LOGIC AUTHENTICATION ---
+  // --- LOGIC AUTHENTICATION & FETCH SETTINGS ---
   const forceLogout = () => {
-    sessionStorage.clear(); // Bersihkan semua sesi
+    sessionStorage.clear();
     window.location.href = "/admin/login";
   };
 
@@ -47,7 +49,7 @@ const Sidebar = () => {
       return;
     }
 
-    // 2. Load Data Admin dari Storage (Tanpa Decode Token)
+    // 2. Load Data Admin dari Storage
     try {
       const storedAdmin = JSON.parse(
         sessionStorage.getItem("adminData") || "{}"
@@ -64,7 +66,7 @@ const Sidebar = () => {
       console.error("Gagal load data admin:", error);
     }
 
-    // 3. Cek Validitas Token via API (Bukan jwt-decode)
+    // 3. Cek Validitas Token via API
     const verifyToken = async () => {
       try {
         const res = await fetch(`${API_URL}/api/auth/admin/me`, {
@@ -83,15 +85,30 @@ const Sidebar = () => {
       }
     };
 
+    // --- LOGIC BARU: AMBIL LOGO DARI API SETTINGS ---
+    const fetchLogo = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/settings`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.headerLogo) {
+            setLogoUrl(`${API_URL}${data.headerLogo}`);
+          }
+        }
+      } catch (err) {
+        console.error("Gagal memuat logo sidebar:", err);
+      }
+    };
+
     verifyToken();
+    fetchLogo(); // Jalankan fetch logo
     
-    // Cek berkala setiap 60 detik (Opsional)
     const intervalId = setInterval(verifyToken, 60000); 
     return () => clearInterval(intervalId);
 
   }, []);
 
-  // --- SISA KODE TAMPILAN (TIDAK BERUBAH) ---
+  // --- HELPER & HANDLER ---
   const getNavLinkClass = ({ isActive }) => {
     const baseClasses =
       "flex items-center space-x-3 py-2.5 px-4 rounded-md transition-colors duration-200 ease-in-out text-sm";
@@ -112,7 +129,6 @@ const Sidebar = () => {
     setIsLoggingOut(true);
     const token = sessionStorage.getItem("adminToken");
     
-    // Request Logout ke Backend (Best Practice)
     try {
         await fetch(`${API_URL}/api/auth/admin/logout`, {
             method: 'POST',
@@ -137,12 +153,24 @@ const Sidebar = () => {
 
   const renderSidebarBody = () => (
     <div className="w-64 h-full bg-white border-r border-gray-200 flex flex-col shadow-md">
-      {/* Header Sidebar */}
+      {/* Header Sidebar: Logo & Judul */}
       <div className="flex items-center space-x-3 px-4 py-5 border-b border-gray-200">
-        <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
-          A
-        </div>
-        <h2 className="text-lg font-semibold text-gray-800">Admin Panel</h2>
+        
+        {/* --- BAGIAN YANG DIUBAH: TAMPILKAN LOGO ATAU HURUF 'A' --- */}
+        {logoUrl ? (
+          <img 
+            src={logoUrl} 
+            alt="Logo" 
+            className="w-8 h-8 rounded-lg object-contain bg-gray-50 border border-gray-100"
+          />
+        ) : (
+          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+            A
+          </div>
+        )}
+        {/* --------------------------------------------------------- */}
+
+        <h2 className="text-lg font-semibold text-gray-800">Kompeta Panel</h2>
       </div>
 
       {/* Menu Navigasi */}
@@ -307,7 +335,6 @@ const Sidebar = () => {
         )}
       </button>
 
-
       {/* DESKTOP: sidebar penuh */}
       <div className="hidden md:flex h-screen sticky top-0">
         {renderSidebarBody()}
@@ -318,14 +345,11 @@ const Sidebar = () => {
         className={`fixed inset-0 z-[70] md:hidden transition-all duration-300 ${isSidebarOpen ? "pointer-events-auto" : "pointer-events-none"
           }`}
       >
-        {/* Backdrop */}
         <div
           className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ${isSidebarOpen ? "opacity-100" : "opacity-0"
             }`}
           onClick={() => setIsSidebarOpen(false)}
         />
-
-        {/* Drawer */}
         <div
           className={`absolute left-0 top-0 bottom-0 transform transition-transform duration-300 shadow-2xl ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"
             }`}
