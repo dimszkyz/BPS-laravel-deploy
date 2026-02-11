@@ -7,7 +7,8 @@ import {
   FaSpinner, 
   FaTimes, 
   FaCalendarTimes, 
-  FaClock 
+  FaClock,
+  FaHourglassStart // [BARU] Import icon untuk status belum mulai
 } from "react-icons/fa";
 
 const API_URL = "https://kompeta.web.bps.go.id";
@@ -26,6 +27,10 @@ const LoginPeserta = () => {
   // State untuk Modal & Data Ujian Berakhir
   const [showExpiredModal, setShowExpiredModal] = useState(false);
   const [expiredDetails, setExpiredDetails] = useState(null);
+
+  // [BARU] State untuk Modal Ujian BELUM DIMULAI
+  const [showNotStartedModal, setShowNotStartedModal] = useState(false);
+  const [notStartedDetails, setNotStartedDetails] = useState(null);
 
   // Helper: Format Tanggal Indonesia
   const formatIndoDate = (dateStr) => {
@@ -128,6 +133,7 @@ const LoginPeserta = () => {
     e.preventDefault();
     setErrMsg("");
     setShowExpiredModal(false);
+    setShowNotStartedModal(false); // Reset modal status
 
     if (!email.trim() || !loginCode.trim()) {
         setErrMsg("Email dan Kode Login wajib diisi.");
@@ -160,8 +166,21 @@ const LoginPeserta = () => {
              });
              setLoading(false);
              setShowExpiredModal(true);
-             localStorage.clear(); // Hapus sisa data jika ada
+             localStorage.clear(); 
              return; 
+         }
+
+         // [BARU] Cek apakah error karena BELUM DIMULAI (Code: EXAM_NOT_STARTED)
+         if (data.code === 'EXAM_NOT_STARTED' && data.data) {
+            setNotStartedDetails({
+               nama: data.data.keterangan,
+               tgl: data.data.tanggal,       // Tanggal Mulai
+               jam: data.data.jam_mulai      // Jam Mulai
+            });
+            setLoading(false);
+            setShowNotStartedModal(true); // Tampilkan modal kuning
+            localStorage.clear();
+            return;
          }
          
          // Error lain (salah password, kuota habis, dll)
@@ -328,6 +347,67 @@ const LoginPeserta = () => {
             </div>
         </div>
       )}
+
+      {/* --- [BARU] POPUP UJIAN BELUM DIMULAI --- */}
+      {showNotStartedModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform scale-100 animate-fade-in-up">
+              
+              {/* Header Kuning */}
+              <div className="bg-yellow-50 p-6 flex flex-col items-center justify-center border-b border-yellow-100">
+                  <div className="h-16 w-16 rounded-full bg-yellow-100 text-yellow-600 flex items-center justify-center mb-3 ring-4 ring-yellow-50">
+                      <FaHourglassStart className="text-3xl" />
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900 text-center">
+                      Ujian Belum Dimulai
+                  </h3>
+              </div>
+
+              {/* Body Content */}
+              <div className="p-6">
+                <p className="text-gray-600 text-sm text-center mb-6 leading-relaxed">
+                  Mohon bersabar, sesi ujian ini belum dibuka. Silakan kembali lagi pada waktu yang ditentukan.
+                </p>
+                
+                {/* Detail Box */}
+                {notStartedDetails && (
+                  <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 space-y-3">
+                    <div>
+                      <span className="text-xs text-gray-500 uppercase font-semibold tracking-wider">Nama Ujian</span>
+                      <p className="text-gray-900 font-medium text-sm mt-0.5 line-clamp-2">
+                        {notStartedDetails.nama || "-"}
+                      </p>
+                    </div>
+                    <div className="flex items-start gap-3 pt-2 border-t border-gray-200">
+                       <FaClock className="text-gray-400 mt-0.5 shrink-0" />
+                       <div>
+                          <span className="text-xs text-gray-500 block">Waktu Mulai</span>
+                          <span className="text-sm font-semibold text-yellow-700 block">
+                             {formatIndoDate(notStartedDetails.tgl)} • {notStartedDetails.jam} WIB
+                          </span>
+                       </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Button */}
+              <div className="p-4 bg-gray-50 border-t border-gray-100">
+                <button
+                    onClick={() => {
+                      setShowNotStartedModal(false);
+                      setLoginCode(""); 
+                      localStorage.clear();
+                    }}
+                    className="w-full inline-flex justify-center items-center gap-2 rounded-xl border border-transparent shadow-sm px-4 py-3 bg-gray-900 text-sm font-bold text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-900 transition-all"
+                >
+                    <FaTimes /> Tutup Pemberitahuan
+                </button>
+              </div>
+            </div>
+        </div>
+      )}
+
     </div>
   );
 };

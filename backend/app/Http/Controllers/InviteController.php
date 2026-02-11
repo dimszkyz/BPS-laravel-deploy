@@ -203,13 +203,26 @@ class InviteController extends Controller
             return response()->json(['message' => 'Kredensial tidak cocok. Cek Email & Kode Login.'], 404);
         }
 
-        // --- [LOGIKA BARU] Cek Waktu Ujian ---
+        // --- [LOGIKA CEK WAKTU] ---
         if ($invitation->exam) {
             $exam = $invitation->exam;
             
             // Set timezone ke WIB (Asia/Jakarta)
             $now = Carbon::now('Asia/Jakarta');
             
+            // 1. Cek Waktu MULAI
+            // Parse waktu mulai dari DB
+            $startDateTime = Carbon::parse($exam->tanggal . ' ' . $exam->jam_mulai, 'Asia/Jakarta');
+
+            if ($now->lessThan($startDateTime)) {
+                return response()->json([
+                    'message' => 'Ujian belum dimulai.',
+                    'code' => 'EXAM_NOT_STARTED', // Kode khusus untuk frontend
+                    'data' => $exam 
+                ], 403);
+            }
+
+            // 2. Cek Waktu SELESAI
             // Parse waktu selesai dari DB
             $endDateTime = Carbon::parse($exam->tanggal_berakhir . ' ' . $exam->jam_berakhir, 'Asia/Jakarta');
 
